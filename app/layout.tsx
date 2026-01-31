@@ -16,6 +16,20 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CLICR - Real-time Occupancy & Analytics",
   description: "The premium B2B SaaS for venue traffic management.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "CLICR",
+  },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

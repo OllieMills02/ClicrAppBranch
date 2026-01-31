@@ -39,7 +39,8 @@ export default function NewVenuePage() {
         };
 
         await addVenue(venue);
-        router.push(`/venues/${newVenueId}`);
+        // Redirect to dashboard to see the new venue
+        router.push('/dashboard');
     };
 
     return (

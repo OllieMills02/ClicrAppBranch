@@ -72,6 +72,29 @@ export default function DashboardPage() {
 
             {/* Per-Venue Sections */}
             <div className="space-y-6">
+
+                {/* ONBOARDING EMPTY STATE */}
+                {venues.length === 0 && (
+                    <div className="bg-[#1e2330]/50 border border-white/5 rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-6 max-w-2xl mx-auto mt-12">
+                        <div className="w-20 h-20 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center">
+                            <Building2 className="w-10 h-10" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-white mb-2">Welcome to your Dashboard</h2>
+                            <p className="text-slate-400 max-w-md mx-auto">
+                                It looks like you haven't set up any venues yet. Get started by adding your first location to track occupancy.
+                            </p>
+                        </div>
+                        <Link
+                            href="/venues/new"
+                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-8 rounded-full shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2"
+                        >
+                            Set up your first Venue <ArrowRight className="w-5 h-5" />
+                        </Link>
+                    </div>
+                )}
+
+
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     {venues.map(venue => {
                         const stats = getVenueStats(venue.id);

@@ -32,13 +32,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const { currentUser } = useApp();
 
     return (
-        <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
-            {/* Sidebar */}
-            <aside className="w-64 border-r border-border bg-card/50 hidden md:flex flex-col glass-panel z-20">
+        // Root container: Fixed to viewport edges (inset-0) to guarantee full coverage
+        // Flex Column to stack content and nav naturally
+        <div className="fixed inset-0 w-full bg-background text-foreground flex flex-col md:flex-row overflow-hidden">
+
+            {/* Sidebar (Desktop) */}
+            <aside className="w-64 border-r border-border bg-card/50 hidden md:flex flex-col glass-panel z-20 shrink-0">
                 <div className="p-6 border-b border-border/50">
                     <div className="flex items-center justify-between">
                         <div className="relative w-32 h-10">
-                            {/* Using standard img for quick file reference compatibility, or check if Image needs width/height */}
+                            {/* Using standard img for quick file reference compatibility */}
                             <img src="/clicr-logo.png" alt="CLICR" className="w-full h-full object-contain object-left" />
                         </div>
                         <Link href="/settings" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors">
@@ -77,17 +80,65 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
             </aside>
 
-            {/* Main Content */}
-            <main className="flex-1 overflow-auto relative">
-                {/* Background Gradients for 'Premium' feel */}
-                <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
-                <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] bg-primary/10 blur-[100px] rounded-full pointer-events-none" />
-                <div className="absolute top-[40%] left-[20%] w-[400px] h-[400px] bg-secondary/5 blur-[120px] rounded-full pointer-events-none" />
+            {/* Main Content Area */}
+            {/* flex-1 grows to fill space, pushing Nav to bottom. min-h-0 prevents overflow issues. */}
+            <main className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
+                <div className="flex-1 overflow-y-auto overscroll-none p-4 md:p-8">
+                    {/* Background Gradients */}
+                    <div className="fixed top-0 left-0 w-full h-[500px] bg-gradient-to-b from-primary/5 to-transparent pointer-events-none -z-10" />
 
-                <div className="relative z-10 p-6 md:p-8 max-w-7xl mx-auto min-h-full">
-                    {children}
+                    <div className="max-w-7xl mx-auto min-h-full">
+                        {children}
+                    </div>
                 </div>
             </main>
+
+            {/* Mobile Bottom Navigation - Natural Flex Child */}
+            {/* No 'fixed'. Just sits at the bottom of the flex column. */}
+            <nav className="md:hidden flex-none bg-[#0f1116] border-t border-white/10 pb-[env(safe-area-inset-bottom)] z-50">
+                <div className="flex justify-around items-center p-2">
+                    {NAV_ITEMS.filter(i => !['Venues', 'Areas'].includes(i.label)).map((item) => {
+                        const isActive = pathname.startsWith(item.href);
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={cn(
+                                    "flex flex-col items-center gap-1 p-2 rounded-xl transition-all w-16",
+                                    isActive
+                                        ? "text-primary"
+                                        : "text-slate-500 hover:text-slate-300"
+                                )}
+                            >
+                                <div className={cn(
+                                    "p-1.5 rounded-full transition-all",
+                                    isActive ? "bg-primary/20" : "bg-transparent"
+                                )}>
+                                    <item.icon className={cn("w-5 h-5", isActive && "fill-current")} />
+                                </div>
+                                <span className="text-[10px] font-bold">{item.label}</span>
+                            </Link>
+                        );
+                    })}
+                    <Link
+                        href="/settings"
+                        className={cn(
+                            "flex flex-col items-center gap-1 p-2 rounded-xl transition-all w-16",
+                            pathname.startsWith('/settings')
+                                ? "text-primary"
+                                : "text-slate-500 hover:text-slate-300"
+                        )}
+                    >
+                        <div className={cn(
+                            "p-1.5 rounded-full transition-all",
+                            pathname.startsWith('/settings') ? "bg-primary/20" : "bg-transparent"
+                        )}>
+                            <Settings className="w-5 h-5" />
+                        </div>
+                        <span className="text-[10px] font-bold">More</span>
+                    </Link>
+                </div>
+            </nav>
         </div>
     );
 }

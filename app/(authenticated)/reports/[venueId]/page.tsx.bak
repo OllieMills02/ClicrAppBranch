@@ -1,0 +1,273 @@
+"use client";
+
+import React, { useMemo } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useApp } from '@/lib/store';
+import { FileSpreadsheet, FileText, Calendar, ArrowLeft } from 'lucide-react';
+import { exportReportsToExcel, exportToCSV } from '@/lib/exportUtils';
+import { cn } from '@/lib/utils';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+
+const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#06b6d4', '#10b981'];
+
+export default function VenueReportPage() {
+    const { venueId } = useParams();
+    const router = useRouter();
+    const { events, scanEvents, venues, areas, clicrs } = useApp();
+    const venue = venues.find(v => v.id === venueId);
+
+    // Filter data for this venue
+    const venueEvents = events.filter(e => e.venue_id === venueId);
+    const venueScanEvents = scanEvents.filter(s => s.venue_id === venueId);
+
+    const handleExportExcel = () => {
+        if (!venue) return;
+
+        let exportEvents = venueEvents;
+        let exportScans = venueScanEvents;
+
+        // If no real data, generate mock data for the export so the user can verify the format
+        if (exportEvents.length === 0 && exportScans.length === 0) {
+            const now = Date.now();
+            const mockEvents: any[] = [];
+            const mockScans: any[] = [];
+
+            // Generate 50 mock events/scans over last 5 hours
+            for (let i = 0; i < 50; i++) {
+                const time = now - Math.floor(Math.random() * 5 * 3600000);
+
+                // Mock Event
+                mockEvents.push({
+                    id: `mock_e_${i}`,
+                    venue_id: venue.id,
+                    timestamp: time,
+                    delta: 1,
+                    flow_type: 'IN',
+                    event_type: 'TAP',
+                    gender: Math.random() > 0.5 ? 'M' : 'F',
+                    user_id: 'mock_user'
+                });
+
+                // Mock Scan
+                mockScans.push({
+                    id: `mock_s_${i}`,
+                    venue_id: venue.id,
+                    timestamp: time,
+                    scan_result: 'ACCEPTED',
+                    age: 18 + Math.floor(Math.random() * 30),
+                    sex: Math.random() > 0.5 ? 'M' : 'F',
+                    zip_code: '10001'
+                });
+            }
+            exportEvents = mockEvents;
+            exportScans = mockScans;
+        }
+
+        // Filter specifically for export
+        const vAreas = areas.filter(a => a.venue_id === venueId);
+        const vClicrs = clicrs.filter(c => vAreas.map(a => a.id).includes(c.area_id));
+        exportReportsToExcel(exportEvents, exportScans, [venue], vAreas, vClicrs, `CLICR_Report_${venue.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`);
+    };
+
+    const scanChartData = useMemo(() => {
+        // Aggregate real scan events
+        const bands: Record<string, number> = { '18-20': 0, '21-25': 0, '26-30': 0, '31-40': 0, '41+': 0, 'Under 18': 0 };
+
+        venueScanEvents.forEach(scan => {
+            const age = scan.age;
+            if (age < 18) bands['Under 18']++;
+            else if (age <= 20) bands['18-20']++;
+            else if (age <= 25) bands['21-25']++;
+            else if (age <= 30) bands['26-30']++;
+            else if (age <= 40) bands['31-40']++;
+            else bands['41+']++;
+        });
+
+        // Use mock data if empty for demo visual only
+        if (venueScanEvents.length === 0) {
+            return [
+                { age_band: '18-20', count: 0 },
+                { age_band: '21-25', count: 0 },
+                { age_band: '26-30', count: 0 },
+                { age_band: '31-40', count: 0 },
+                { age_band: '41+', count: 0 },
+            ];
+        }
+
+        return Object.entries(bands).map(([k, v]) => ({ age_band: k, count: v }));
+    }, [venueScanEvents]);
+
+    const genderData = useMemo(() => {
+        let m = 0, f = 0;
+        venueScanEvents.forEach(s => {
+            if (s.sex === 'M') m++;
+            else if (s.sex === 'F') f++;
+        });
+
+        // Fallback to events if scans are empty
+        if (venueScanEvents.length === 0) {
+            venueEvents.forEach(e => {
+                if (e.gender === 'M') m += Math.abs(e.delta);
+                else if (e.gender === 'F') f += Math.abs(e.delta);
+            });
+        }
+
+        // Prevent empty chart error
+        if (m === 0 && f === 0) return [{ name: 'No Data', value: 1 }];
+
+        return [
+            { name: 'Male', value: m },
+            { name: 'Female', value: f }
+        ];
+    }, [venueScanEvents, venueEvents]);
+
+
+    if (!venue) return <div className="p-8 text-white">Venue not found</div>;
+
+    return (
+        <div className="space-y-8 animate-[fade-in_0.5s_ease-out] pb-20">
+            <div className="flex items-center gap-4 mb-2">
+                <button onClick={() => router.push('/reports')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <div>
+                    <h1 className="text-3xl font-bold text-white">{venue.name} Reports</h1>
+                    <p className="text-slate-400">Detailed logs and analytics for {venue.city}.</p>
+                </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+                <button className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition-colors">
+                    <Calendar className="w-4 h-4" />
+                    <span>Last 24 Hours</span>
+                </button>
+                <button
+                    onClick={handleExportExcel}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-lg shadow-emerald-900/20 transition-all transform hover:-translate-y-0.5"
+                >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Export Excel</span>
+                </button>
+                <button
+                    onClick={() => exportToCSV(venueEvents, `${venue.name.replace(/\s+/g, '_')}_events`)}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition-colors"
+                >
+                    <FileText className="w-4 h-4" />
+                    <span>CSV</span>
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Audience Age Distribution */}
+                <div className="glass-panel p-6 rounded-xl">
+                    <h3 className="text-lg font-bold text-white mb-6">Audience Age Distribution</h3>
+                    <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={scanChartData}>
+                                <XAxis dataKey="age_band" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }} />
+                                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Gender Split */}
+                <div className="glass-panel p-6 rounded-xl">
+                    <h3 className="text-lg font-bold text-white mb-6">Demographics</h3>
+                    <div className="h-[300px] flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={genderData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={80}
+                                    outerRadius={100}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                >
+                                    {genderData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.name === 'Male' ? '#3b82f6' : entry.name === 'Female' ? '#ec4899' : '#94a3b8'} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
+                                    itemStyle={{ color: '#f8fafc' }}
+                                />
+                                <Legend wrapperStyle={{ color: '#cbd5e1' }} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Recent Events Table */}
+            <div className="glass-panel rounded-xl overflow-hidden">
+                <div className="p-6 border-b border-white/5">
+                    <h3 className="text-lg font-bold text-white">Event Log</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-900/50 text-slate-400 uppercase text-xs">
+                            <tr>
+                                <th className="px-6 py-3">Time</th>
+                                <th className="px-6 py-3">Type</th>
+                                <th className="px-6 py-3">Clicr / Area</th>
+                                <th className="px-6 py-3">Delta</th>
+                                <th className="px-6 py-3">Gender</th>
+                                <th className="px-6 py-3">User</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {venueEvents.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-8 text-center text-slate-500">No events recorded today</td>
+                                </tr>
+                            ) : (
+                                venueEvents.slice(0, 50).map(e => (
+                                    <tr key={e.id} className="hover:bg-white/5 transition-colors">
+                                        <td className="px-6 py-4 font-mono text-slate-400">{new Date(e.timestamp).toLocaleTimeString()}</td>
+                                        <td className="px-6 py-4">
+                                            <span className={cn(
+                                                "px-2 py-1 rounded-full text-xs font-bold",
+                                                e.event_type === 'TAP' ? "bg-slate-700 text-slate-200" : "bg-orange-500/20 text-orange-400"
+                                            )}>
+                                                {e.event_type}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {clicrs.find(c => c.id === e.clicr_id)?.name || e.clicr_id}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={cn(
+                                                "text-base font-bold",
+                                                e.delta > 0 ? "text-emerald-400" : "text-rose-400"
+                                            )}>
+                                                {e.delta > 0 ? '+' : ''}{e.delta}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {e.gender ? (
+                                                <span className={cn(
+                                                    "px-2 py-1 rounded text-xs font-bold",
+                                                    e.gender === 'M' ? "text-blue-400 bg-blue-400/10" : "text-pink-400 bg-pink-400/10"
+                                                )}>
+                                                    {e.gender === 'M' ? 'Male' : 'Female'}
+                                                </span>
+                                            ) : <span className="text-slate-600">-</span>}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-400">
+                                            {e.user_id}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}

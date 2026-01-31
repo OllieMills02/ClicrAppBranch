@@ -1,0 +1,21 @@
+{
+    "name": "CLICR - Venue Intelligence",
+    "short_name": "CLICR",
+    "description": "Real-time occupancy tracking and venue management.",
+    "start_url": "/dashboard",
+    "display": "standalone",
+    "background_color": "#000000",
+    "theme_color": "#000000",
+    "icons": [
+        {
+            "src": "/clicr-logo.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/clicr-logo.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

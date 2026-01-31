@@ -76,9 +76,9 @@ const INITIAL_USER: User = {
     email: 'owner@clicr.com',
     phone: '555-0123',
     role: 'OWNER',
-    assigned_venue_ids: [],
-    assigned_area_ids: [],
-    assigned_clicr_ids: [],
+    assigned_venue_ids: ['ven_001', 'ven_002'],
+    assigned_area_ids: ['area_001', 'area_002', 'area_003'],
+    assigned_clicr_ids: ['clicr_001', 'clicr_002'],
 };
 
 type DBData = {
@@ -299,6 +299,22 @@ export function removeUser(userId: string) {
     return data;
 }
 
+export function assignEntityToUser(userId: string, entityType: 'VENUE' | 'AREA' | 'CLICR', entityId: string) {
+    const data = readDB();
+    const user = data.users.find(u => u.id === userId);
+    if (user) {
+        if (entityType === 'VENUE' && !user.assigned_venue_ids.includes(entityId)) {
+            user.assigned_venue_ids.push(entityId);
+        } else if (entityType === 'AREA' && !user.assigned_area_ids.includes(entityId)) {
+            user.assigned_area_ids.push(entityId);
+        } else if (entityType === 'CLICR' && !user.assigned_clicr_ids.includes(entityId)) {
+            user.assigned_clicr_ids.push(entityId);
+        }
+        writeDB(data);
+    }
+    return data;
+}
+
 export function addBan(ban: BanRecord) {
     const data = readDB();
     data.bans.push(ban);
@@ -358,12 +374,43 @@ export function revokeBan(banId: string, revokedByUserId: string, reason?: strin
     return data;
 }
 
-export function resetAllCounts() {
+export function resetAllCounts(venueId?: string) {
     try {
         const data = readDB();
-        data.clicrs = data.clicrs.map(c => ({ ...c, current_count: 0 }));
-        data.events = [];
-        data.scanEvents = [];
+
+        if (venueId) {
+            // VENUE SPECIFIC RESET
+            console.log(`Resetting counts for venue: ${venueId}`);
+
+            // 1. Identify Areas belonging to this Venue
+            const targetAreaIds = data.areas.filter(a => a.venue_id === venueId).map(a => a.id);
+
+            // 2. Identify Clicrs in those Areas
+            const targetClicrIds = data.clicrs.filter(c => targetAreaIds.includes(c.area_id)).map(c => c.id);
+
+            // 3. Reset Clicrs
+            data.clicrs = data.clicrs.map(c => {
+                if (targetClicrIds.includes(c.id)) {
+                    return { ...c, current_count: 0 };
+                }
+                return c;
+            });
+
+            // 4. Remove Events for this Venue Only
+            // Events have venue_id directly, so this is easy
+            data.events = data.events.filter(e => e.venue_id !== venueId);
+
+            // 5. Remove Scan Events for this Venue Only
+            data.scanEvents = data.scanEvents.filter(s => s.venue_id !== venueId);
+
+        } else {
+            // GLOBAL RESET (Legacy/Admin)
+            console.log('Resetting ALL counts globally.');
+            data.clicrs = data.clicrs.map(c => ({ ...c, current_count: 0 }));
+            data.events = [];
+            data.scanEvents = [];
+        }
+
         writeDB(data);
         return data;
     } catch (error) {

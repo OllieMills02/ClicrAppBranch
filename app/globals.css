@@ -1,33 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  /* Base Colors - Deep Space/Night Theme to feel premium */
-  --background: #0f172a; /* Slate 900 */
-  --foreground: #f8fafc; /* Slate 50 */
-  
-  /* Primary Brand - Electric Indigo/Violet */
-  --primary: #6366f1; /* Indigo 500 */
-  --primary-foreground: #ffffff;
-  --primary-hover: #4f46e5; /* Indigo 600 */
+  /* Base Colors - Deep Dark Theme */
+  --background: #050505;
+  /* Almost Black */
+  --foreground: #f8fafc;
+  /* Slate 50 */
 
-  /* Secondary/Accent - Cyan/Teal for "active" indicators */
-  --secondary: #06b6d4; /* Cyan 500 */
+  /* Primary Brand - Clicr Purple */
+  --primary: #8b5cf6;
+  /* Violet 500 */
+  --primary-foreground: #ffffff;
+  --primary-hover: #7c3aed;
+  /* Violet 600 */
+
+  /* Secondary/Accent - Clicr Green */
+  --secondary: #10b981;
+  /* Emerald 500 */
   --secondary-foreground: #ffffff;
 
-  /* Surfaces for cards (Glassmorphism base) */
-  --card: #1e293b; /* Slate 800 */
-  --card-foreground: #f1f5f9; /* Slate 100 */
-  
+  /* Surfaces for cards */
+  --card: #111111;
+  /* Dark Gray */
+  --card-foreground: #f1f5f9;
+
   /* Borders */
-  --border: #334155; /* Slate 700 */
-  --input: #334155;
-  --ring: #6366f1;
+  --border: #27272a;
+  /* Zinc 800 */
+  --input: #27272a;
+  --ring: #8b5cf6;
+  /* Matches Primary */
 
   /* Status Colors */
-  --success: #10b981; /* Emerald 500 */
-  --warning: #f59e0b; /* Amber 500 */
-  --destructive: #ef4444; /* Red 500 */
-  
+  --success: #10b981;
+  /* Green */
+  --warning: #f59e0b;
+  /* Amber */
+  --destructive: #ef4444;
+  /* Red */
+
   /* Radii */
   --radius: 0.75rem;
 }
@@ -48,19 +59,31 @@
   --color-warning: var(--warning);
   --color-destructive: var(--destructive);
   --radius-lg: var(--radius);
-  
+
   /* Animations */
   --animate-fade-in: fade-in 0.5s ease-out;
   --animate-slide-up: slide-up 0.5s ease-out;
-  
+
   @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
   }
-  
+
   @keyframes slide-up {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
 }
 
@@ -69,6 +92,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+  /* Prevent elastic bouncing of the app shell */
+}
+
+html {
+  overscroll-behavior-y: none;
 }
 
 /* Glassmorphism Utilities */
@@ -90,13 +119,16 @@ body {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
 }
