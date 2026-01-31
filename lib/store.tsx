@@ -1,0 +1,563 @@
+"use client";
+
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { Business, Venue, Area, Clicr, CountEvent, User, IDScanEvent, BanRecord, BannedPerson, PatronBan, BanEnforcementEvent, BanAuditLog, Device, CapacityOverride, VenueAuditLog } from './types';
+
+const INITIAL_USER: User = {
+    id: 'usr_owner',
+    name: 'Harrison Owner',
+    email: 'owner@clicr.com',
+    role: 'OWNER',
+    assigned_venue_ids: [],
+    assigned_area_ids: [],
+    assigned_clicr_ids: [],
+};
+
+export type AppState = {
+    business: Business | null;
+    venues: Venue[];
+    areas: Area[];
+    clicrs: Clicr[];
+    devices: Device[];
+    capacityOverrides: CapacityOverride[];
+    venueAuditLogs: VenueAuditLog[];
+    events: CountEvent[];
+    scanEvents: IDScanEvent[];
+    currentUser: User;
+    users: User[];
+    bans: BanRecord[];
+
+    // Patron Banning System
+    patrons: BannedPerson[];
+    patronBans: PatronBan[];
+    banAuditLogs: BanAuditLog[];
+    banEnforcementEvents: BanEnforcementEvent[];
+
+    isLoading: boolean;
+};
+
+type AppContextType = AppState & {
+    recordEvent: (event: Omit<CountEvent, 'id' | 'timestamp' | 'user_id' | 'business_id'>) => void;
+    recordScan: (scan: Omit<IDScanEvent, 'id' | 'timestamp'>) => void;
+    resetCounts: () => void;
+    addUser: (user: User) => Promise<void>;
+    updateUser: (user: User) => Promise<void>;
+    removeUser: (userId: string) => Promise<void>;
+
+    // Venue Management
+    addVenue: (venue: Venue) => Promise<void>;
+    updateVenue: (venue: Venue) => Promise<void>;
+    addArea: (area: Area) => Promise<void>;
+    updateArea: (area: Area) => Promise<void>;
+
+    // Devices
+    addClicr: (clicr: Clicr) => Promise<void>;
+    updateClicr: (clicr: Clicr) => Promise<void>;
+    addDevice: (device: Device) => Promise<void>;
+    updateDevice: (device: Device) => Promise<void>;
+
+    // Overrides & Logs
+    addCapacityOverride: (override: CapacityOverride) => Promise<void>;
+    addVenueAuditLog: (log: VenueAuditLog) => Promise<void>;
+
+    // Bans
+    addBan: (ban: BanRecord) => Promise<void>;
+    revokeBan: (banId: string, revokedByUserId: string, reason?: string) => Promise<void>;
+    createPatronBan: (person: BannedPerson, ban: PatronBan, log: BanAuditLog) => Promise<void>;
+    updatePatronBan: (ban: PatronBan, log: BanAuditLog) => Promise<void>;
+    recordBanEnforcement: (event: BanEnforcementEvent) => Promise<void>;
+};
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const AppProvider = ({ children }: { children: ReactNode }) => {
+    const [state, setState] = useState<AppState>({
+        business: null,
+        venues: [],
+        areas: [],
+        clicrs: [],
+        devices: [],
+        capacityOverrides: [],
+        venueAuditLogs: [],
+        events: [],
+        scanEvents: [],
+        currentUser: INITIAL_USER,
+        users: [],
+        bans: [],
+
+        patrons: [],
+        patronBans: [],
+        banAuditLogs: [],
+        banEnforcementEvents: [],
+
+        isLoading: true,
+    });
+
+    const isResettingRef = useRef(false);
+
+    const refreshState = async () => {
+        if (isResettingRef.current) {
+            console.log("Skipping poll due to pending reset");
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/sync', { cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                setState(prev => ({ ...prev, ...data, isLoading: false }));
+            }
+        } catch (error) {
+            console.error("Failed to sync state", error);
+        }
+    };
+
+    // Initial load and polling
+    useEffect(() => {
+        refreshState();
+        const interval = setInterval(refreshState, 2000); // Poll every 2 seconds
+        return () => clearInterval(interval);
+    }, []);
+
+    const recordEvent = async (data: Omit<CountEvent, 'id' | 'timestamp' | 'user_id' | 'business_id'>) => {
+        if (!state.business) return;
+
+        const newEvent: CountEvent = {
+            ...data,
+            id: Math.random().toString(36).substring(7),
+            timestamp: Date.now(),
+            user_id: state.currentUser.id,
+            business_id: state.business.id,
+        };
+
+        // Optimistic update
+        setState(prev => {
+            const updatedClicrs = prev.clicrs.map(c => {
+                if (c.id === data.clicr_id) {
+                    return { ...c, current_count: c.current_count + data.delta };
+                }
+                return c;
+            });
+            return {
+                ...prev,
+                clicrs: updatedClicrs,
+                events: [newEvent, ...prev.events] // Prepend locally
+            };
+        });
+
+        // Send to API
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'RECORD_EVENT', payload: newEvent })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) {
+            console.error("Failed to record event", error);
+            // Revert optimistic update? For now, we rely on next poll to fix it.
+        }
+    };
+
+    const recordScan = async (data: Omit<IDScanEvent, 'id' | 'timestamp'>) => {
+        const newScan: IDScanEvent = {
+            ...data,
+            id: Math.random().toString(36).substring(7),
+            timestamp: Date.now(),
+        };
+
+        // Optimistic
+        setState(prev => ({
+            ...prev,
+            scanEvents: [newScan, ...prev.scanEvents]
+        }));
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'RECORD_SCAN', payload: newScan })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) {
+            console.error("Failed to record scan", error);
+        }
+    };
+
+    const resetCounts = async () => {
+        // LOCK polling to prevent race conditions
+        isResettingRef.current = true;
+
+        // Optimistic update
+        const optimisticState = {
+            ...state,
+            clicrs: state.clicrs.map(c => ({ ...c, current_count: 0 })),
+            events: [],
+            scanEvents: []
+        };
+        setState(optimisticState);
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'RESET_COUNTS' }),
+                cache: 'no-store'
+            });
+
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) {
+            console.error("Failed to reset counts", error);
+        } finally {
+            // UNLOCK polling
+            isResettingRef.current = false;
+            // Force immediate fresh poll
+            refreshState();
+        }
+    };
+
+    const addUser = async (user: User) => {
+        // Optimistic
+        setState(prev => ({
+            ...prev,
+            users: [...prev.users, user]
+        }));
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_USER', payload: user })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) {
+            console.error("Failed to add user", error);
+        }
+    };
+
+    const updateUser = async (user: User) => {
+        setState(prev => ({
+            ...prev,
+            users: prev.users.map(u => u.id === user.id ? user : u)
+        }));
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'UPDATE_USER', payload: user })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to update user", error); }
+    };
+
+    const removeUser = async (userId: string) => {
+        setState(prev => ({
+            ...prev,
+            users: prev.users.filter(u => u.id !== userId)
+        }));
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'REMOVE_USER', payload: { id: userId } })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to remove user", error); }
+    };
+
+    // --- VENUE MANAGEMENT ---
+
+    const addVenue = async (venue: Venue) => {
+        setState(prev => ({ ...prev, venues: [...prev.venues, venue] }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_VENUE', payload: venue })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add venue", error); }
+    };
+
+    const updateVenue = async (venue: Venue) => {
+        setState(prev => ({ ...prev, venues: prev.venues.map(v => v.id === venue.id ? venue : v) }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'UPDATE_VENUE', payload: venue })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to update venue", error); }
+    };
+
+    const addArea = async (area: Area) => {
+        setState(prev => ({ ...prev, areas: [...prev.areas, area] }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_AREA', payload: area })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add area", error); }
+    };
+
+    const updateArea = async (area: Area) => {
+        setState(prev => ({ ...prev, areas: prev.areas.map(a => a.id === area.id ? area : a) }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'UPDATE_AREA', payload: area })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to update area", error); }
+    };
+
+    // --- DEVICES ---
+
+    const addClicr = async (clicr: Clicr) => {
+        setState(prev => ({ ...prev, clicrs: [...prev.clicrs, clicr] }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_CLICR', payload: clicr })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add clicr", error); }
+    };
+
+    const updateClicr = async (clicr: Clicr) => {
+        setState(prev => ({ ...prev, clicrs: prev.clicrs.map(c => c.id === clicr.id ? clicr : c) }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'UPDATE_CLICR', payload: clicr })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to update clicr", error); }
+    };
+
+    const addDevice = async (device: Device) => {
+        setState(prev => ({ ...prev, devices: [...prev.devices, device] }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_DEVICE', payload: device })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add device", error); }
+    };
+
+    const updateDevice = async (device: Device) => {
+        setState(prev => ({ ...prev, devices: prev.devices.map(d => d.id === device.id ? device : d) }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'UPDATE_DEVICE', payload: device })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to update device", error); }
+    };
+
+    // --- OVERRIDES & LOGS ---
+
+    const addCapacityOverride = async (override: CapacityOverride) => {
+        setState(prev => ({ ...prev, capacityOverrides: [...prev.capacityOverrides, override] }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_CAPACITY_OVERRIDE', payload: override })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add override", error); }
+    };
+
+    const addVenueAuditLog = async (log: VenueAuditLog) => {
+        setState(prev => ({ ...prev, venueAuditLogs: [...prev.venueAuditLogs, log] }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ADD_VENUE_AUDIT_LOG', payload: log })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add audit log", error); }
+    };
+
+    // --- BANS ---
+
+    const addBan = async (ban: BanRecord) => {
+        setState(prev => ({
+            ...prev,
+            bans: [...(prev.bans || []), ban]
+        }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'CREATE_BAN', payload: ban })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to add ban", error); }
+    };
+
+    const revokeBan = async (banId: string, revokedByUserId: string, reason?: string) => {
+        setState(prev => ({
+            ...prev,
+            bans: (prev.bans || []).map(b => b.id === banId ? { ...b, status: 'REVOKED', revoked_by_user_id: revokedByUserId, revoked_at: Date.now(), revoked_reason: reason } : b)
+        }));
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'REVOKE_BAN', payload: { banId, revokedByUserId, reason } })
+            });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) { console.error("Failed to revoke ban", error); }
+    };
+
+    const createPatronBan = async (person: BannedPerson, ban: PatronBan, log: BanAuditLog) => {
+        // Optimistic UI update
+        setState(prev => ({
+            ...prev,
+            patrons: [...prev.patrons.filter(p => p.id !== person.id), person], // Update or push
+            patronBans: [...prev.patronBans, ban],
+            banAuditLogs: [...prev.banAuditLogs, log]
+        }));
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'CREATE_PATRON_BAN', payload: { person, ban, log } })
+            });
+
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) {
+            console.error("Failed to create patron ban", error);
+        }
+    };
+
+    const updatePatronBan = async (ban: PatronBan, log: BanAuditLog) => {
+        // Optimistic UI update
+        setState(prev => ({
+            ...prev,
+            patronBans: prev.patronBans.map(b => b.id === ban.id ? ban : b),
+            banAuditLogs: [...prev.banAuditLogs, log]
+        }));
+
+        try {
+            const res = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'UPDATE_PATRON_BAN', payload: { ban, log } })
+            });
+
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+            }
+        } catch (error) {
+            console.error("Failed to update patron ban", error);
+        }
+    };
+
+    const recordBanEnforcement = async (event: BanEnforcementEvent) => {
+        // Optimistic UI update
+        setState(prev => ({
+            ...prev,
+            banEnforcementEvents: [event, ...prev.banEnforcementEvents]
+        }));
+
+        try {
+            await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'RECORD_BAN_ENFORCEMENT', payload: event })
+            });
+            // We don't strictly need to await the full DB sync here, optimizing for speed
+        } catch (error) {
+            console.error("Failed to record ban enforcement", error);
+        }
+    };
+
+    return (
+        <AppContext.Provider value={{ ...state, recordEvent, recordScan, resetCounts, addUser, updateUser, removeUser, addClicr, updateClicr, addVenue, updateVenue, addArea, updateArea, addDevice, updateDevice, addCapacityOverride, addVenueAuditLog, addBan, revokeBan, createPatronBan, updatePatronBan, recordBanEnforcement } as AppContextType}>
+            {children}
+        </AppContext.Provider>
+    );
+};
+
+export const useApp = () => {
+    const context = useContext(AppContext);
+    if (context === undefined) {
+        throw new Error('useApp must be used within an AppProvider');
+    }
+    return context;
+};
