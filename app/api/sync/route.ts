@@ -62,6 +62,26 @@ async function hydrateData(data: DBData): Promise<DBData> {
             })) as IDScanEvent[];
         }
 
+        // 3. Fetch Devices (Clicr Metadata Persistence)
+        const { data: devices, error: devError } = await supabaseAdmin
+            .from('devices')
+            .select('*');
+
+        if (!devError && devices) {
+            // Update local Clicrs with persisted names/configs
+            data.clicrs = data.clicrs.map((c: Clicr) => {
+                const match = devices.find((d: any) => d.id === c.id);
+                if (match) {
+                    return {
+                        ...c,
+                        name: match.name, // Persisted name
+                        button_config: match.config?.button_config || c.button_config // Persisted buttons
+                    };
+                }
+                return c;
+            });
+        }
+
     } catch (err) {
         console.error("[API] Supabase Hydration Failed:", err);
     }
@@ -175,7 +195,20 @@ export async function POST(request: Request) {
             case 'UPDATE_USER': updatedData = updateUser(payload as User); break;
             case 'REMOVE_USER': updatedData = removeUser(payload.id); break;
             case 'ADD_CLICR': updatedData = addClicr(payload as Clicr); break;
-            case 'UPDATE_CLICR': updatedData = updateClicr(payload as Clicr); break;
+            case 'UPDATE_CLICR':
+                const clicr = payload as Clicr;
+                // PERSISTENCE: Save name/config to Supabase
+                try {
+                    await supabaseAdmin.from('devices').upsert({
+                        id: clicr.id,
+                        name: clicr.name,
+                        business_id: 'biz_001', // Default falllback
+                        device_type: 'COUNTER',
+                        config: { button_config: clicr.button_config }
+                    });
+                } catch (e) { console.error("Update Clicr Persistence Failed", e); }
+                updatedData = updateClicr(clicr);
+                break;
             case 'UPDATE_AREA': updatedData = updateArea(payload as Area); break;
             case 'ADD_VENUE': updatedData = addVenue(payload); break;
             case 'UPDATE_VENUE': updatedData = updateVenue(payload); break;
