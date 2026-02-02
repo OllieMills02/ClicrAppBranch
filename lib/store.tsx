@@ -166,8 +166,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return fetch('/api/sync', { method: 'POST', headers, body: JSON.stringify(body) });
     };
 
+    // Simple lock to prevent polling from overwriting optimistic updates during active writes
+    const isWritingRef = useRef(false);
+
     const recordEvent = async (data: Omit<CountEvent, 'id' | 'timestamp' | 'user_id' | 'business_id'>) => {
         if (!state.business) return;
+
+        isWritingRef.current = true; // Lock polling
 
         const newEvent: CountEvent = {
             ...data,
@@ -194,22 +199,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         // Send to API
         try {
-            const res = await fetch('/api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'RECORD_EVENT', payload: newEvent })
-            });
+            // Use authFetch to ensure user context is passed (fixes filtering/identity issues)
+            const res = await authFetch({ action: 'RECORD_EVENT', payload: newEvent });
+
             if (res.ok) {
                 const updatedDB = await res.json();
                 setState(prev => ({ ...prev, ...updatedDB }));
             }
         } catch (error) {
             console.error("Failed to record event", error);
-            // Revert optimistic update? For now, we rely on next poll to fix it.
+            // Revert?
+        } finally {
+            // Delay unlocking to allow server consistency to settle
+            setTimeout(() => {
+                isWritingRef.current = false;
+            }, 500);
         }
     };
 
     const recordScan = async (data: Omit<IDScanEvent, 'id' | 'timestamp'>) => {
+        isWritingRef.current = true;
+
         const newScan: IDScanEvent = {
             ...data,
             id: Math.random().toString(36).substring(7),
@@ -223,17 +233,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }));
 
         try {
-            const res = await fetch('/api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'RECORD_SCAN', payload: newScan })
-            });
+            const res = await authFetch({ action: 'RECORD_SCAN', payload: newScan }); // Use authFetch
             if (res.ok) {
                 const updatedDB = await res.json();
                 setState(prev => ({ ...prev, ...updatedDB }));
             }
         } catch (error) {
             console.error("Failed to record scan", error);
+        } finally {
+            setTimeout(() => {
+                isWritingRef.current = false;
+            }, 500);
         }
     };
 
