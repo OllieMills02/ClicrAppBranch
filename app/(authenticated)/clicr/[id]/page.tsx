@@ -479,13 +479,40 @@ export default function ClicrCounterPage() {
         }
     };
 
+    // Debounce Scanner Input (Wait for scanner to finish dumping string)
+    useEffect(() => {
+        if (!scannerInput) return;
+        const timeout = setTimeout(() => {
+            if (scannerInput.length > 10) { // Minimal length check
+                console.log("Processing Hardware Scan (Debounced)...");
+                try {
+                    const parsed = parseAAMVA(scannerInput);
+                    // Only process if we actually got something useful
+                    if (parsed.firstName || parsed.idNumber || parsed.city) {
+                        processScan(parsed);
+                        setScannerInput(''); // Clear after success
+                    }
+                } catch (err) {
+                    // Silent fail if it's just garbage input, otherwise alert?
+                    // console.warn("Parse attempt failed", err);
+                }
+            }
+        }, 300); // 300ms wait after last character
+        return () => clearTimeout(timeout);
+    }, [scannerInput]);
+
     return (
         <div className="flex flex-col h-[100vh] bg-black relative overflow-hidden" onClick={() => inputRef.current?.focus()}>
 
-            <form onSubmit={handleHardwareSubmit} className="opacity-0 absolute top-0 left-0 w-0 h-0 overflow-hidden">
-                <input ref={inputRef} value={scannerInput} onChange={(e) => setScannerInput(e.target.value)} autoFocus autoComplete="off" type="text" />
-                <button type="submit">Scan</button>
-            </form>
+            {/* Hidden Textarea for Multiline Scanners */}
+            <textarea
+                ref={inputRef as any}
+                value={scannerInput}
+                onChange={(e) => setScannerInput(e.target.value)}
+                className="opacity-0 absolute top-0 left-0 w-0 h-0 overflow-hidden pointer-events-none"
+                autoFocus
+                autoComplete="off"
+            />
 
             {/* Top Bar - No margin bottom, handled by flex gap */}
             <div className="flex bg-black pt-4 pb-2 px-4 items-center justify-between z-30 relative shrink-0">

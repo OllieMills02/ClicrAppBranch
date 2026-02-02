@@ -62,8 +62,18 @@ export function findMatchingBan(
 }
 
 export function evaluateScan(parsedId: ParsedID, patrons: BannedPerson[], bans: PatronBan[], venueId: string): ScanResult {
+    // 0. Check for Valid Parse
+    if (parsedId.age === null || parsedId.age === undefined) {
+        return {
+            status: 'ERROR',
+            message: 'READ ERROR',
+            parsedId,
+            age: 0
+        };
+    }
+
     // 1. Check Age (21+)
-    if (parsedId.age !== null && parsedId.age < 21) {
+    if (parsedId.age < 21) {
         return {
             status: 'DENIED',
             message: `UNDERAGE (${parsedId.age})`,
