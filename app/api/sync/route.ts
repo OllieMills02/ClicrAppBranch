@@ -198,7 +198,7 @@ export async function POST(request: Request) {
         // --- CRITICAL FIX: HYDRATE RESPONSE ---
         // Before returning, we MUST hydrate the data from Supabase so the client gets the real counts
         // especially for events/scans/resets
-        if (['RECORD_EVENT', 'RECORD_SCAN', 'RESET_COUNTS'].includes(action) && updatedData) {
+        if (['RECORD_EVENT', 'RECORD_SCAN', 'RESET_COUNTS', 'UPDATE_CLICR'].includes(action) && updatedData) {
             updatedData = await hydrateData(updatedData);
         }
 
