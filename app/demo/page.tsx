@@ -26,7 +26,7 @@ export default function DemoPage() {
                         <ArrowLeft className="w-4 h-4" /> Back to Website
                     </Link>
                     <div className="font-bold tracking-tight text-lg">CLICR <span className="text-primary px-1 bg-primary/10 rounded text-xs uppercase tracking-widest ml-2">Product Tour</span></div>
-                    <Link href="/login" className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold hover:bg-slate-200 transition-colors">
+                    <Link href="/login?returnTo=/demo" className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold hover:bg-slate-200 transition-colors">
                         Start Real Trial
                     </Link>
                 </div>
@@ -180,6 +180,17 @@ export default function DemoPage() {
                         </AnimatePresence>
                     </div>
 
+                </div>
+
+                {/* Call to Action */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-6 mt-12">
+                    <h2 className="text-3xl font-bold">Ready to command your venue?</h2>
+                    <p className="text-slate-400 max-w-lg mx-auto">
+                        Get the full suite of tools: ID Scanning, Ban Networking, and Multi-Venue Management.
+                    </p>
+                    <Link href="/login?returnTo=/demo" className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 text-sm font-bold text-black transition-colors hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-900">
+                        Start Your Free Trial
+                    </Link>
                 </div>
 
             </main>

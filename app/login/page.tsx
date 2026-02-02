@@ -1,7 +1,7 @@
 
 import { login, signup } from './actions'
 import Link from 'next/link'
-import { Zap } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
 type Props = {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -11,9 +11,15 @@ export default async function LoginPage({ searchParams }: Props) {
     const params = await searchParams;
     const error = params.error as string;
     const message = params.message as string;
+    const returnTo = (params.returnTo as string) || '/';
 
     return (
-        <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
+        <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4 relative">
+
+            {/* Back Button */}
+            <Link href={returnTo} className="absolute top-8 left-8 text-slate-500 hover:text-white flex items-center gap-2 transition-colors font-bold text-sm">
+                <ArrowLeft className="w-4 h-4" /> Back
+            </Link>
 
             <div className="w-full max-w-md space-y-8">
                 <div className="text-center">
