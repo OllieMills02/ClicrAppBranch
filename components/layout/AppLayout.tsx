@@ -2,7 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 import {
     LayoutDashboard,
     Building2,
@@ -31,7 +32,15 @@ const NAV_ITEMS = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
+    const router = useRouter();
     const { currentUser } = useApp();
+    const supabase = createClient();
+
+    const handleSignOut = async () => {
+        await supabase.auth.signOut();
+        router.refresh();
+        router.push('/login');
+    };
 
     return (
         // Root container: Fixed to viewport edges (inset-0) to guarantee full coverage
@@ -75,7 +84,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </nav>
 
                 <div className="p-4 border-t border-border/50">
-                    <button className="flex items-center gap-3 px-3 py-2 w-full text-slate-400 hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                    <button onClick={handleSignOut} className="flex items-center gap-3 px-3 py-2 w-full text-slate-400 hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                         <LogOut className="w-5 h-5" />
                         <span>Sign Out</span>
                     </button>
