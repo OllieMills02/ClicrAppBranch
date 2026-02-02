@@ -42,8 +42,8 @@ export function parseAAMVA(data: string): ParsedID {
     }
 
     const getVal = (code: string) => {
-        // Regex looks for the code, followed by the value, until a newline or new code
-        const regex = new RegExp(`${code}(.*?)(?:\\n|\\r|$)`, 'i');
+        // Find code (e.g. DAJ), optional colon/space, then capture until newline or end
+        const regex = new RegExp(`${code}[:\\s]*(.*?)(?:\\n|\\r|$)`, 'i');
         const match = data.match(regex);
         return match ? match[1].trim() : null;
     };
