@@ -160,10 +160,11 @@ export async function POST(request: Request) {
                 if (isUserBanned(event.user_id, event.venue_id)) {
                     return NextResponse.json({ error: 'User is banned' }, { status: 403 });
                 }
-                // Persist to Supabase
+                // SUPABASE PERSISTENCE
+                let writeSuccess = false;
                 try {
-                    await supabaseAdmin.from('occupancy_events').insert({
-                        business_id: event.business_id || 'biz_001',
+                    const { error } = await supabaseAdmin.from('occupancy_events').insert({
+                        business_id: event.business_id || 'biz_001', // Fallback
                         venue_id: event.venue_id,
                         area_id: event.area_id,
                         session_id: event.clicr_id,
@@ -172,10 +173,19 @@ export async function POST(request: Request) {
                         delta: event.delta,
                         event_type: event.event_type
                     });
+                    if (error) throw error;
+                    writeSuccess = true;
                 } catch (e) {
                     console.error("Supabase Write Failed", e);
                 }
+
                 updatedData = addEvent(event);
+
+                // Only hydrate if the write succeeded (consistency)
+                // If write failed (e.g. UUID error), we rely on local memory state to avoid resetting client to 0
+                if (writeSuccess) {
+                    updatedData = await hydrateData(updatedData);
+                }
                 break;
 
             case 'RECORD_SCAN':
@@ -231,7 +241,7 @@ export async function POST(request: Request) {
         // --- CRITICAL FIX: HYDRATE RESPONSE ---
         // Before returning, we MUST hydrate the data from Supabase so the client gets the real counts
         // especially for events/scans/resets
-        if (['RECORD_EVENT', 'RECORD_SCAN', 'RESET_COUNTS', 'UPDATE_CLICR'].includes(action) && updatedData) {
+        if (['RECORD_SCAN', 'RESET_COUNTS', 'UPDATE_CLICR'].includes(action) && updatedData) {
             updatedData = await hydrateData(updatedData);
         }
 
