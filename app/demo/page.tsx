@@ -11,8 +11,8 @@ export default function DemoPage() {
             {/* Nav */}
             <nav className="border-b border-white/10 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">
-                        <ArrowLeft className="w-4 h-4" /> Back to Home
+                    <Link href="https://clicr.co" className="flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">
+                        <ArrowLeft className="w-4 h-4" /> Back to Website
                     </Link>
                     <div className="font-bold tracking-tight text-lg">CLICR <span className="text-primary px-1 bg-primary/10 rounded text-xs uppercase tracking-widest ml-2">Interactive Demo</span></div>
                     <Link href="/login" className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold hover:bg-slate-200 transition-colors">
