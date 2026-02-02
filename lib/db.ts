@@ -81,7 +81,7 @@ const INITIAL_USER: User = {
     assigned_clicr_ids: ['clicr_001', 'clicr_002'],
 };
 
-type DBData = {
+export type DBData = {
     business: Business;
     venues: Venue[];
     areas: Area[];

@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { readDB, addEvent, addScan, resetAllCounts, addUser, updateUser, removeUser, writeDB, addClicr, updateClicr, updateArea, factoryResetDB, addBan, revokeBan, isUserBanned, createPatronBan, updatePatronBan, recordBanEnforcement, addVenue, updateVenue, addArea, addDevice, updateDevice, addCapacityOverride, addVenueAuditLog, assignEntityToUser, updateBusiness } from '@/lib/db';
+import { readDB, addEvent, addScan, resetAllCounts, addUser, updateUser, removeUser, writeDB, addClicr, updateClicr, updateArea, factoryResetDB, addBan, revokeBan, isUserBanned, createPatronBan, updatePatronBan, recordBanEnforcement, addVenue, updateVenue, addArea, addDevice, updateDevice, addCapacityOverride, addVenueAuditLog, assignEntityToUser, updateBusiness, DBData } from '@/lib/db';
 import { CountEvent, IDScanEvent, User, Clicr, Area, BanRecord, BanEnforcementEvent } from '@/lib/types';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
 
 // --- HYDRATION HELPER ---
-async function hydrateData(data: any) {
+async function hydrateData(data: DBData): Promise<DBData> {
     try {
         // 1. Fetch Occupancy Events
         const { data: occEvents, error: occError } = await supabaseAdmin
@@ -131,7 +131,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action, payload } = body;
     const userId = request.headers.get('x-user-id');
-    let updatedData;
+    let updatedData: DBData | undefined;
 
     try {
         switch (action) {
@@ -198,7 +198,7 @@ export async function POST(request: Request) {
         // --- CRITICAL FIX: HYDRATE RESPONSE ---
         // Before returning, we MUST hydrate the data from Supabase so the client gets the real counts
         // especially for events/scans/resets
-        if (['RECORD_EVENT', 'RECORD_SCAN', 'RESET_COUNTS'].includes(action)) {
+        if (['RECORD_EVENT', 'RECORD_SCAN', 'RESET_COUNTS'].includes(action) && updatedData) {
             updatedData = await hydrateData(updatedData);
         }
 
