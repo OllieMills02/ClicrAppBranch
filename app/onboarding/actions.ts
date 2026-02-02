@@ -14,6 +14,11 @@ export async function completeOnboarding(formData: FormData) {
         return redirect('/login')
     }
 
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.error("Missing SUPABASE_SERVICE_ROLE_KEY");
+        return redirect('/onboarding?error=Server Configuration Error: Missing Admin Key');
+    }
+
     const businessName = formData.get('businessName') as string
     const venueName = formData.get('venueName') as string
 
@@ -30,7 +35,7 @@ export async function completeOnboarding(formData: FormData) {
 
     if (bizError) {
         console.error("Business Creation Failed", bizError)
-        return // Handle error
+        return redirect(`/onboarding?error=Failed to create business: ${bizError.message}`)
     }
 
     // 3. Create Profile (Admin Write - bypass RLS for now as user might not match policy yet)
