@@ -30,7 +30,8 @@ async function hydrateData(data: DBData): Promise<DBData> {
             // B. Update Clicrs in Memory
             data.clicrs = data.clicrs.map((c: Clicr) => ({
                 ...c,
-                current_count: clicrCounts[c.id] || 0
+                // Resiliency: If Supabase has data, use it. If not (e.g. write failed), keep local optimistic count.
+                current_count: clicrCounts[c.id] !== undefined ? clicrCounts[c.id] : c.current_count
             }));
 
             // C. Replace Events History
