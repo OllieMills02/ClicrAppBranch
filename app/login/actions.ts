@@ -20,8 +20,16 @@ export async function login(formData: FormData) {
         redirect('/login?error=Invalid login credentials')
     }
 
-    revalidatePath('/', 'layout')
-    redirect('/dashboard')
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+        // Use centralized resolver
+        const { resolvePostAuthRoute } = await import('@/lib/auth-helpers');
+        const nextPath = await resolvePostAuthRoute(user.id);
+        revalidatePath('/', 'layout');
+        redirect(nextPath);
+    } else {
+        redirect('/login?error=Session creation failed');
+    }
 }
 
 export async function signup(formData: FormData) {
