@@ -104,8 +104,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const isResettingRef = useRef(false);
 
     const refreshState = async () => {
-        if (isResettingRef.current) {
-            console.log("Skipping poll due to pending reset");
+        if (isResettingRef.current || isWritingRef.current) {
+            console.log("Skipping poll due to pending operation");
             return;
         }
 
