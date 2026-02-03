@@ -354,28 +354,31 @@ export async function POST(request: Request) {
 
                 // ATOMIC UPDATE via RPC
                 try {
-                    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('process_occupancy_event', {
+                    const rpcParams = {
                         p_business_id: finalEventBizId,
                         p_venue_id: event.venue_id,
                         p_area_id: event.area_id,
-                        p_device_id: event.clicr_id, // Map session_id to device_id better if possible, or use one field
-                        p_user_id: userId || '00000000-0000-0000-0000-000000000000', // Fallback UUID
+                        p_device_id: event.clicr_id,
+                        p_user_id: userId || '00000000-0000-0000-0000-000000000000',
                         p_delta: event.delta,
                         p_flow_type: event.flow_type,
                         p_event_type: event.event_type,
                         p_session_id: event.clicr_id
-                    });
+                    };
+                    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('process_occupancy_event', rpcParams);
 
-                    if (rpcError) throw rpcError;
+                    if (rpcError) {
+                        console.error("RPC Error Details:", JSON.stringify(rpcError, null, 2));
+                        console.error("RPC Params:", JSON.stringify(rpcParams, null, 2));
+                        throw rpcError;
+                    }
 
                     // Success - update local optimized state
-                    // We can also return the new TRUE count from the RPC to the client
-                    // For now, we update local memory to match
                     updatedData = addEvent(event);
 
-                } catch (e) {
-                    console.error("Supabase Atomic Update Failed", e);
-                    return NextResponse.json({ error: 'Count Failed' }, { status: 500 });
+                } catch (e: any) {
+                    console.error("Supabase Atomic Update Failed Exception", e);
+                    return NextResponse.json({ error: `Count Failed: ${e.message || JSON.stringify(e)}` }, { status: 500 });
                 }
                 break;
 
