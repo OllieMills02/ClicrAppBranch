@@ -61,6 +61,7 @@ type AppContextType = AppState & {
     deleteClicr: (clicrId: string) => Promise<{ success: boolean; error?: string }>;
     addDevice: (device: Device) => Promise<void>;
     updateDevice: (device: Device) => Promise<void>;
+    deleteDevice: (deviceId: string) => Promise<{ success: boolean; error?: string }>;
 
     // Overrides & Logs
     addCapacityOverride: (override: CapacityOverride) => Promise<void>;
@@ -615,6 +616,32 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) { console.error("Failed to update device", error); }
     };
 
+    const deleteDevice = async (deviceId: string) => {
+        // Optimistic
+        const originalDevice = state.devices.find(d => d.id === deviceId);
+        setState(prev => ({ ...prev, devices: prev.devices.filter(d => d.id !== deviceId) }));
+
+        try {
+            const res = await authFetch({ action: 'DELETE_DEVICE', payload: { id: deviceId } });
+            if (res.ok) {
+                const updatedDB = await res.json();
+                setState(prev => ({ ...prev, ...updatedDB }));
+                return { success: true };
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                console.error("Delete Device Failed", errData);
+                setLastError(`Delete Device Failed: ${errData.error || res.statusText}`);
+                if (originalDevice) setState(prev => ({ ...prev, devices: [...prev.devices, originalDevice] }));
+                return { success: false, error: errData.error };
+            }
+        } catch (error: any) {
+            console.error("Failed to delete device", error);
+            setLastError(`Delete Device Failed: ${error.message}`);
+            if (originalDevice) setState(prev => ({ ...prev, devices: [...prev.devices, originalDevice] }));
+            return { success: false, error: error.message };
+        }
+    };
+
     // --- OVERRIDES & LOGS ---
 
     const addCapacityOverride = async (override: CapacityOverride) => {
@@ -776,7 +803,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     return (
-        <AppContext.Provider value={{ ...state, setLastError, recordEvent, recordScan, resetCounts, addUser, updateUser, removeUser, updateBusiness, addClicr, updateClicr, deleteClicr, addVenue, updateVenue, addArea, updateArea, addDevice, updateDevice, addCapacityOverride, addVenueAuditLog, addBan, revokeBan, createPatronBan, updatePatronBan, recordBanEnforcement }}>
+        <AppContext.Provider value={{ ...state, setLastError, recordEvent, recordScan, resetCounts, addUser, updateUser, removeUser, updateBusiness, addClicr, updateClicr, deleteClicr, addVenue, updateVenue, addArea, updateArea, addDevice, updateDevice, deleteDevice, addCapacityOverride, addVenueAuditLog, addBan, revokeBan, createPatronBan, updatePatronBan, recordBanEnforcement }}>
             {children}
         </AppContext.Provider>
     );
