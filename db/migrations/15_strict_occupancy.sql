@@ -12,10 +12,10 @@ CREATE OR REPLACE FUNCTION process_occupancy_event(
   p_business_id uuid,
   p_venue_id uuid,
   p_area_id uuid,
-  p_device_id uuid,
+  p_device_id text, -- Changed to TEXT to tolerate legacy IDs
   p_user_id uuid, 
   p_delta int,
-  p_flow_type text, -- Changed to text to match Types
+  p_flow_type text,
   p_event_type text,
   p_session_id text
 ) RETURNS jsonb
@@ -27,13 +27,21 @@ DECLARE
   v_current_occ int;
   v_new_occ int;
   v_snap_exists boolean;
+  v_safe_device_id uuid;
 BEGIN
+  -- Safe Cast Device ID
+  BEGIN
+    v_safe_device_id := p_device_id::uuid;
+  EXCEPTION WHEN invalid_text_representation THEN
+    v_safe_device_id := NULL;
+  END;
+
   -- 1. Insert the event
   INSERT INTO occupancy_events (
     business_id, venue_id, area_id, device_id, 
     timestamp, flow_type, delta, event_type, session_id
   ) VALUES (
-    p_business_id, p_venue_id, p_area_id, p_device_id,
+    p_business_id, p_venue_id, p_area_id, v_safe_device_id,
     now(), p_flow_type, p_delta, p_event_type, p_session_id
   ) RETURNING id INTO v_new_event_id;
 
