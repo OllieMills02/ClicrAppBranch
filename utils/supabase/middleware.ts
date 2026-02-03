@@ -59,11 +59,35 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url)
     }
 
-    // 2. If user IS logged in and trying to access Login/Signup -> Redirect to Dashboard
-    if (user && (path === '/login' || path === '/signup' || path === '/')) {
-        const url = request.nextUrl.clone()
-        url.pathname = '/dashboard'
-        return NextResponse.redirect(url)
+    // 2. If user IS logged in...
+    if (user) {
+        // --- ONBOARDING CHECK ---
+        // Exclude system routes from this check to avoid breaking assets/API
+        if (!path.startsWith('/api') && !path.startsWith('/_next') && !path.includes('.')) {
+
+            // Check Profile for Business Link
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('business_id')
+                .eq('id', user.id)
+                .single();
+
+            const hasBusiness = profile?.business_id;
+
+            // Scenario A: User needs to onboard but is somewhere else
+            if (!hasBusiness && path !== '/onboarding') {
+                const url = request.nextUrl.clone()
+                url.pathname = '/onboarding'
+                return NextResponse.redirect(url)
+            }
+
+            // Scenario B: User finished onboarding but is trying to go back (or to login)
+            if (hasBusiness && (path === '/onboarding' || path === '/login' || path === '/signup' || path === '/')) {
+                const url = request.nextUrl.clone()
+                url.pathname = '/dashboard'
+                return NextResponse.redirect(url)
+            }
+        }
     }
 
     return supabaseResponse
