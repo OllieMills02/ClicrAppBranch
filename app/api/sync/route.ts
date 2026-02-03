@@ -185,7 +185,8 @@ async function hydrateData(data: DBData): Promise<DBData> {
         // 3. Fetch Devices (Clicr Metadata Persistence)
         const { data: devices, error: devError } = await supabaseAdmin
             .from('devices')
-            .select('*');
+            .select('*')
+            .is('deleted_at', null); // IMPORTANT: Filter out soft deleted rows
 
         if (!devError && devices) {
             // Update local Clicrs with persisted names/configs
