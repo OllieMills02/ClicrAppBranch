@@ -115,6 +115,7 @@ export type Clicr = {
         label_a: string; // Defaults to "MALE"
         label_b: string; // Defaults to "FEMALE"
     };
+    command?: string; // Hardware mapping/pairing code
 };
 
 export type DeviceType = 'COUNTER' | 'SCANNER' | 'COMBO';

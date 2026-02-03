@@ -399,7 +399,44 @@ export async function POST(request: Request) {
                 }
                 break;
 
-            case 'ADD_CLICR': updatedData = addClicr(payload as Clicr); break;
+            case 'ADD_CLICR':
+                const newClicr = payload as Clicr;
+
+                // Resolve Business
+                let clicrBizId: string | null = null;
+                if (userId) {
+                    const { data: p } = await supabaseAdmin.from('profiles').select('business_id').eq('id', userId).single();
+                    if (p) clicrBizId = p.business_id;
+                }
+
+                if (!clicrBizId) {
+                    console.error("No Business ID found for ADD_CLICR");
+                    return NextResponse.json({ error: 'No Business Context' }, { status: 400 });
+                }
+
+                try {
+                    const { error } = await supabaseAdmin.from('devices').insert({
+                        id: newClicr.id,
+                        business_id: clicrBizId,
+                        area_id: newClicr.area_id,
+                        name: newClicr.name,
+                        pairing_code: newClicr.command || null,
+                        device_type: 'COUNTER_ONLY',
+                        is_active: newClicr.active ?? true,
+                        config: { button_config: newClicr.button_config }
+                    });
+
+                    if (error) {
+                        console.error("ADD_CLICR persistence failed", error);
+                        return NextResponse.json({ error: 'Database Insert Failed: ' + error.message }, { status: 500 });
+                    }
+                } catch (e: any) {
+                    console.error("ADD_CLICR persistence exception", e);
+                    return NextResponse.json({ error: 'Server Error: ' + e.message }, { status: 500 });
+                }
+
+                updatedData = addClicr(newClicr);
+                break;
             case 'UPDATE_CLICR':
                 const clicr = payload as Clicr;
                 // PERSISTENCE: Save name/config to Supabase

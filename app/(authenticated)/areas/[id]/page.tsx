@@ -42,7 +42,9 @@ export default function AreaDetailPage() {
 
     // Add Clicr Form State
     const [newClicrName, setNewClicrName] = useState('');
+    const [newClicrCommand, setNewClicrCommand] = useState('');
     const [newClicrFlow, setNewClicrFlow] = useState<FlowMode>('BIDIRECTIONAL');
+    const [isSavingClicr, setIsSavingClicr] = useState(false);
 
     useEffect(() => {
         if (area) {
@@ -67,19 +69,27 @@ export default function AreaDetailPage() {
 
     const handleAddClicr = async () => {
         if (!newClicrName.trim()) return;
+        setIsSavingClicr(true);
 
-        await addClicr({
-            id: `clicr_${Math.random().toString(36).substr(2, 9)}`,
+        const success = await addClicr({
+            id: crypto.randomUUID(),
             area_id: area.id,
             name: newClicrName,
+            command: newClicrCommand.trim() || undefined,
             flow_mode: newClicrFlow,
             current_count: 0,
             active: true
         });
 
-        setShowAddClicr(false);
-        setNewClicrName('');
-        setNewClicrFlow('BIDIRECTIONAL');
+        setIsSavingClicr(false);
+        if (success) {
+            setShowAddClicr(false);
+            setNewClicrName('');
+            setNewClicrCommand('');
+            setNewClicrFlow('BIDIRECTIONAL');
+        } else {
+            alert('Failed to save Clicr. Please try again.');
+        }
     };
 
     const handleArchiveClicr = async (clicr: Clicr) => {
@@ -218,6 +228,18 @@ export default function AreaDetailPage() {
                                 </div>
 
                                 <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Command / Mapping (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={newClicrCommand}
+                                        onChange={e => setNewClicrCommand(e.target.value)}
+                                        placeholder="e.g. DOOR_1_IN or Hardware Code"
+                                        className="w-full bg-black border border-slate-700 rounded-lg p-3 text-white focus:border-primary outline-none font-mono text-sm"
+                                    />
+                                    <p className="text-[10px] text-slate-500 mt-1">Unique identifier for hardware or keyboard mapping.</p>
+                                </div>
+
+                                <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Flow Mode</label>
                                     <div className="grid grid-cols-3 gap-2">
                                         {(['IN_ONLY', 'OUT_ONLY', 'BIDIRECTIONAL'] as const).map(mode => (
@@ -240,7 +262,13 @@ export default function AreaDetailPage() {
 
                             <div className="flex gap-3 mt-8">
                                 <button onClick={() => setShowAddClicr(false)} className="flex-1 p-3 rounded-lg bg-slate-800 text-slate-300 font-bold hover:bg-slate-700">Cancel</button>
-                                <button onClick={handleAddClicr} className="flex-1 p-3 rounded-lg bg-primary text-white font-bold hover:bg-primary-hover shadow-lg shadow-primary/20">Create Clicr</button>
+                                <button
+                                    onClick={handleAddClicr}
+                                    disabled={isSavingClicr || !newClicrName.trim()}
+                                    className="flex-1 p-3 rounded-lg bg-primary text-white font-bold hover:bg-primary-hover shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isSavingClicr ? 'Saving...' : 'Create Clicr'}
+                                </button>
                             </div>
                         </motion.div>
                     </div>

@@ -53,7 +53,7 @@ type AppContextType = AppState & {
     updateArea: (area: Area) => Promise<void>;
 
     // Devices
-    addClicr: (clicr: Clicr) => Promise<void>;
+    addClicr: (clicr: Clicr) => Promise<boolean>;
     updateClicr: (clicr: Clicr) => Promise<void>;
     addDevice: (device: Device) => Promise<void>;
     updateDevice: (device: Device) => Promise<void>;
@@ -412,14 +412,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // --- DEVICES ---
 
     const addClicr = async (clicr: Clicr) => {
+        // Optimistic Update
+        const tempId = clicr.id;
         setState(prev => ({ ...prev, clicrs: [...prev.clicrs, clicr] }));
+
         try {
             const res = await authFetch({ action: 'ADD_CLICR', payload: clicr });
             if (res.ok) {
                 const updatedDB = await res.json();
                 setState(prev => ({ ...prev, ...updatedDB }));
+                return true;
+            } else {
+                console.error("Failed to add clicr API error");
+                // Revert
+                setState(prev => ({ ...prev, clicrs: prev.clicrs.filter(c => c.id !== tempId) }));
+                return false;
             }
-        } catch (error) { console.error("Failed to add clicr", error); }
+        } catch (error) {
+            console.error("Failed to add clicr network error", error);
+            // Revert
+            setState(prev => ({ ...prev, clicrs: prev.clicrs.filter(c => c.id !== tempId) }));
+            return false;
+        }
     };
 
     const updateClicr = async (clicr: Clicr) => {
