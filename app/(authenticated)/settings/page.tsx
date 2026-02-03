@@ -19,7 +19,34 @@ export default function SettingsPage() {
     const [banEndDate, setBanEndDate] = useState('');
     const [banReasonCat, setBanReasonCat] = useState('Policy Violation');
     const [banReasonText, setBanReasonText] = useState('');
+    // Ban Confirmation State
     const [banConfirmText, setBanConfirmText] = useState('');
+
+    // Remove User State
+    const [showRemoveUserModal, setShowRemoveUserModal] = useState(false);
+    const [userToRemove, setUserToRemove] = useState<User | null>(null);
+
+    const handleRemoveUser = async () => {
+        if (!userToRemove) return;
+        // API call to remove user would go here. 
+        // For now we rely on the store's action if exists, or just calling the API directly
+        try {
+            await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || '' },
+                body: JSON.stringify({ action: 'REMOVE_USER', payload: { id: userToRemove.id } })
+            });
+            // Force reload or optimistically update? 
+            // The store might not update automatically if we don't use the hook action.
+            // But `users` from `useApp` updates via SWR/polling usually.
+            // Let's assume eventual consistency or refresh.
+            window.location.reload(); // Simple brute force update for now
+        } catch (e) {
+            console.error("Failed to remove user", e);
+        }
+        setShowRemoveUserModal(false);
+        setUserToRemove(null);
+    };
 
     const handleOpenBanModal = (user: User) => {
         setSelectedUserToBan(user);
@@ -229,7 +256,13 @@ export default function SettingsPage() {
                                                 <span className="text-xs font-bold hidden group-hover:block">Ban</span>
                                             </button>
                                         )}
-                                        <button className="p-2 text-slate-500 hover:text-white transition-colors">Edit</button>
+                                        <button
+                                            onClick={() => { setUserToRemove(user); setShowRemoveUserModal(true); }}
+                                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-950/50 rounded-lg transition-all text-xs font-bold"
+                                            title="Remove User"
+                                        >
+                                            Remove
+                                        </button>
                                     </div>
                                 </div>
                             );
@@ -419,6 +452,23 @@ export default function SettingsPage() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Remove User Modal */}
+            {showRemoveUserModal && userToRemove && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm">
+                        <h2 className="text-xl font-bold text-white mb-2">Remove User?</h2>
+                        <p className="text-slate-400 mb-6">
+                            Are you sure you want to remove <span className="text-white font-bold">{userToRemove.name}</span>?
+                            They will lose access immediately. This cannot be undone.
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setShowRemoveUserModal(false)} className="px-4 py-2 text-slate-400 hover:text-white">Cancel</button>
+                            <button onClick={handleRemoveUser} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold">Remove User</button>
                         </div>
                     </div>
                 </div>
