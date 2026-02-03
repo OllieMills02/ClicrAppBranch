@@ -337,7 +337,19 @@ export default function AreaDetailPage() {
 
             {/* DEBUG PANEL */}
             <div className="mt-8 p-4 border border-slate-800 rounded-lg bg-black/20 text-[10px] font-mono text-slate-500">
-                <p className="font-bold text-slate-400 mb-2">DEBUG: SYNC STATUS</p>
+                <div className="flex items-center justify-between mb-2">
+                    <p className="font-bold text-slate-400">DEBUG: SYNC STATUS</p>
+                    <button
+                        onClick={() => {
+                            if (confirm('Verify: Reset occupancy to 0? This will be logged.')) {
+                                useAppHook.resetCounts(area.venue_id, area.id);
+                            }
+                        }}
+                        className="px-2 py-1 bg-red-900/30 text-red-500 border border-red-900/50 rounded hover:bg-red-900/50"
+                    >
+                        FORCE RESET
+                    </button>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <span className="block text-slate-600">AREA ID:</span> {area.id}
@@ -346,7 +358,8 @@ export default function AreaDetailPage() {
                     </div>
                     <div>
                         <span className="block text-slate-600">CLICRS:</span> {areaClicrs.length}
-                        <span className="block text-slate-600 mt-1">SYNC MODE:</span> Realtime + Polling
+                        <span className="block text-slate-600 mt-1">SYNC MODE:</span> Realtime (Strict)
+                        <span className="block text-slate-600 mt-1">LAST ERROR:</span> {useAppHook.lastError || 'None'}
                     </div>
                 </div>
             </div>

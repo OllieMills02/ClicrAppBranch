@@ -43,7 +43,7 @@ type AppContextType = AppState & {
     recordEvent: (event: Omit<CountEvent, 'id' | 'timestamp' | 'user_id' | 'business_id'>) => Promise<void>;
     recordScan: (scan: Omit<IDScanEvent, 'id' | 'timestamp'>) => Promise<void>;
     // ... other methods ...
-    resetCounts: (venueId?: string) => void;
+    resetCounts: (venueId?: string, areaId?: string) => void;
     addUser: (user: User) => Promise<void>;
     updateUser: (user: User) => Promise<void>;
     removeUser: (userId: string) => Promise<void>;
@@ -166,31 +166,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return () => clearInterval(interval);
     }, []);
 
-    // REALTIME SUBSCRIPTION (Separated to depend on business context)
+    // REALTIME SUBSCRIPTION
     useEffect(() => {
         const supabase = createClient();
         let channel: any = null;
 
         if (state.business?.id) {
-            console.log("Subscribing to Realtime for Business:", state.business.id);
+            console.log(`[Realtime] Subscribing to business: ${state.business.id}`);
+
             channel = supabase.channel(`occupancy_${state.business.id}`)
                 .on(
                     'postgres_changes',
                     {
-                        event: '*', // Listen to INSERT/UPDATE
+                        event: '*',
                         schema: 'public',
                         table: 'occupancy_snapshots',
-                        filter: `business_id=eq.${state.business.id}` // TENANT ISOLATION
+                        filter: `business_id=eq.${state.business.id}`
                     },
                     (payload) => {
-                        // console.log('Realtime change received!', payload);
+                        console.log('[Realtime] Snapshot Update:', payload);
                         if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
                             const newSnap = payload.new as any;
                             setState(prev => ({
                                 ...prev,
                                 areas: prev.areas.map(a => {
                                     if (a.id === newSnap.area_id) {
-                                        return { ...a, current_occupancy: newSnap.current_occupancy };
+                                        console.log(`[Realtime] Updating Area ${a.name} (${a.id}) to ${newSnap.current_occupancy}`);
+                                        return {
+                                            ...a,
+                                            current_occupancy: newSnap.current_occupancy
+                                        };
                                     }
                                     return a;
                                 })
@@ -198,13 +203,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                         }
                     }
                 )
-                .subscribe();
+                .subscribe((status) => {
+                    console.log(`[Realtime] Status changed: ${status}`);
+                    if (status === 'SUBSCRIBED') {
+                        // Optional: Refetch to ensure we didn't miss anything while connecting
+                        refreshState();
+                    }
+                });
         }
 
         return () => {
-            if (channel) supabase.removeChannel(channel);
+            if (channel) {
+                console.log("[Realtime] Unsubscribing...");
+                supabase.removeChannel(channel);
+            }
         };
-    }, [state.business?.id]); // Re-run when business context loads
+    }, [state.business?.id]);
 
     const authFetch = async (body: any) => {
         const supabase = createClient();
@@ -310,23 +324,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const resetCounts = async (venueId?: string) => {
+    const resetCounts = async (venueId?: string, areaId?: string) => {
         // LOCK polling to prevent race conditions
         isResettingRef.current = true;
 
         // Optimistic update
         const optimisticState = {
             ...state,
-            // If venueId is provided, only reset Clicrs in that venue, otherwise reset all
             clicrs: state.clicrs.map(c => {
-                // To do this strictly correct we need to know the clicr's venue.
-                // Assuming areas map to venues. For now, if venueId is passed, we rely on backend mainly,
-                // but visually we wipe everything for safety or implement complex logic.
-                // Given the simple requirement: "Reset All Counts", wiping all local is visually responsive.
-                return { ...c, current_count: 0 };
+                // If areaId provided, match area. If venueId provided, match venue (via area lookup if needed).
+                // Or simply: if we are viewing an Area, we likely passed areaId.
+                if (areaId && c.area_id === areaId) return { ...c, current_count: 0 };
+                if (venueId && !areaId) {
+                    // Check if clicr belongs to venue. Since Clicr -> Area -> Venue, we need Area map.
+                    const area = state.areas.find(a => a.id === c.area_id);
+                    if (area && area.venue_id === venueId) return { ...c, current_count: 0 };
+                }
+                // If global reset (legacy)
+                if (!venueId && !areaId) return { ...c, current_count: 0 };
+
+                return c;
             }),
-            events: [],
-            scanEvents: []
+            areas: state.areas.map(a => {
+                if (areaId && a.id === areaId) return { ...a, current_occupancy: 0 };
+                if (venueId && a.venue_id === venueId) return { ...a, current_occupancy: 0 };
+                if (!venueId && !areaId) return { ...a, current_occupancy: 0 }; // Global
+                return a;
+            })
         };
         setState(optimisticState);
 
@@ -334,7 +358,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             const res = await fetch('/api/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'RESET_COUNTS', venue_id: venueId }),
+                body: JSON.stringify({ action: 'RESET_COUNTS', venue_id: venueId, area_id: areaId }),
                 cache: 'no-store'
             });
 
