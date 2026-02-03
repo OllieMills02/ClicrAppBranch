@@ -235,6 +235,32 @@ export async function GET(request: Request) {
             data.currentUser = user;
         }
 
+        // --- CONTEXT AWARENESS: Load User's Business ---
+        try {
+            const { data: profile } = await supabaseAdmin
+                .from('profiles')
+                .select('business_id')
+                .eq('id', userId)
+                .single();
+
+            if (profile?.business_id) {
+                const { data: myBusiness } = await supabaseAdmin
+                    .from('businesses')
+                    .select('*')
+                    .eq('id', profile.business_id)
+                    .single();
+
+                if (myBusiness) {
+                    data.business = {
+                        id: myBusiness.id,
+                        name: myBusiness.name,
+                        timezone: myBusiness.timezone || 'UTC',
+                        settings: myBusiness.settings || { refresh_interval_sec: 5, capacity_thresholds: [80, 90, 100], reset_rule: 'MANUAL' }
+                    };
+                }
+            }
+        } catch (e) { console.error("Business Context Load Failed", e); }
+
         // --- FILTERING ---
         const visibleVenueIds = user.assigned_venue_ids || [];
         const filteredVenues = data.venues.filter(v => visibleVenueIds.includes(v.id));
@@ -413,6 +439,32 @@ export async function POST(request: Request) {
 
         // --- AUTO-ASSIGNMENT & FILTERING ---
         if (userId && updatedData) {
+            // FIX: Restore correct business context for this user (otherwise hydrateData resets it to default)
+            try {
+                const { data: profile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('business_id')
+                    .eq('id', userId)
+                    .single();
+
+                if (profile?.business_id) {
+                    const { data: myBusiness } = await supabaseAdmin
+                        .from('businesses')
+                        .select('*')
+                        .eq('id', profile.business_id)
+                        .single();
+
+                    if (myBusiness) {
+                        updatedData.business = {
+                            id: myBusiness.id,
+                            name: myBusiness.name,
+                            timezone: myBusiness.timezone || 'UTC',
+                            settings: myBusiness.settings || { refresh_interval_sec: 5, capacity_thresholds: [80, 90, 100], reset_rule: 'MANUAL' }
+                        };
+                    }
+                }
+            } catch (e) { console.error("Business Context Load Failed (POST)", e); }
+
             if (action === 'ADD_VENUE') updatedData = assignEntityToUser(userId, 'VENUE', payload.id);
             if (action === 'ADD_AREA') updatedData = assignEntityToUser(userId, 'AREA', payload.id);
             if (action === 'ADD_CLICR') updatedData = assignEntityToUser(userId, 'CLICR', payload.id);
