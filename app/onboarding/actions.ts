@@ -21,10 +21,14 @@ export async function completeOnboarding(formData: FormData) {
 
     const businessName = formData.get('businessName') as string
     const venueName = formData.get('venueName') as string
+    const venueCapacity = parseInt(formData.get('venueCapacity') as string) || 500
+    const venueTimezone = formData.get('venueTimezone') as string || 'UTC'
 
     if (!businessName || !venueName) {
         return redirect('/onboarding?error=Please fill in all fields')
     }
+
+    // ... (unchanged business creation) ...
 
     // 2. Create Business (Admin Write)
     const { data: business, error: bizError } = await supabaseAdmin
@@ -37,6 +41,8 @@ export async function completeOnboarding(formData: FormData) {
         console.error("Business Creation Failed", bizError)
         return redirect(`/onboarding?error=Failed to create business: ${bizError.message}`)
     }
+
+    // ... (unchanged profile creation) ...
 
     // 3. Create Profile (Admin Write - bypass RLS for now as user might not match policy yet)
     // Use Upsert to handle retries (if profile exists, update it to point to new business)
@@ -60,7 +66,10 @@ export async function completeOnboarding(formData: FormData) {
         .insert({
             business_id: business.id,
             name: venueName,
-            total_capacity: 500
+            total_capacity: venueCapacity,
+            timezone: venueTimezone,
+            status: 'ACTIVE',
+            capacity_enforcement_mode: 'WARN_ONLY'
         })
         .select()
         .single()
