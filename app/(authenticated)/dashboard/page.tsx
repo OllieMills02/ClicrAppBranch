@@ -9,7 +9,15 @@ import { cn } from '@/lib/utils';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 export default function DashboardPage() {
-    const { business, venues, areas, clicrs, events, isLoading } = useApp();
+    const { business, venues, areas, clicrs, isLoading, refreshTrafficStats } = useApp();
+
+    // Init: Fetch traffic stats
+    React.useEffect(() => {
+        if (venues.length > 0) refreshTrafficStats();
+        // Poll for traffic stats every 30s as a backup
+        const interval = setInterval(() => refreshTrafficStats(), 30000);
+        return () => clearInterval(interval);
+    }, [venues.length, refreshTrafficStats]);
 
     // Helper to get stats for a specific venue
     const getVenueStats = (venueId: string) => {
@@ -20,14 +28,10 @@ export default function DashboardPage() {
         // Calculate Occupancy (Live)
         const occupancy = venueClicrs.reduce((sum, c) => sum + c.current_count, 0);
 
-        // Calculate In/Out (Today) based on events
-        const venueEvents = events.filter(e => e.venue_id === venueId);
-        let inCount = 0;
-        let outCount = 0;
-        venueEvents.forEach(e => {
-            if (e.delta > 0) inCount += e.delta;
-            if (e.delta < 0) outCount += Math.abs(e.delta);
-        });
+        // Calculate In/Out (Today) based on Server Stats (Realtime Synced)
+        // We now rely on the 'current_traffic_in/out' fields on the Area object, populated by refreshTrafficStats
+        const inCount = venueAreas.reduce((sum, a) => sum + (a.current_traffic_in || 0), 0);
+        const outCount = venueAreas.reduce((sum, a) => sum + (a.current_traffic_out || 0), 0);
 
         // Capacity
         const venueTotalCap = venueAreas.reduce((sum, a) => sum + (a.default_capacity || 0), 0);

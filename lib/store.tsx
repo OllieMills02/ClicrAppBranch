@@ -68,6 +68,7 @@ type AppContextType = AppState & {
     recordScan: (scan: Omit<IDScanEvent, 'id' | 'timestamp'>) => Promise<void>;
     // ... other methods ...
     resetCounts: (venueId?: string, areaId?: string) => void;
+    refreshTrafficStats: (venueId?: string, areaId?: string) => Promise<void>;
     addUser: (user: User) => Promise<void>;
     updateUser: (user: User) => Promise<void>;
     removeUser: (userId: string) => Promise<void>;
@@ -467,6 +468,41 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             isResettingRef.current = false;
             // Force immediate fresh poll
             refreshState();
+        }
+    };
+
+    const refreshTrafficStats = async (venueId?: string, areaId?: string) => {
+        // Fetch accurate traffic totals from server (RPC)
+        // This ensures Dashboard and Reports match.
+        try {
+            const res = await authFetch({
+                action: 'GET_TRAFFIC_STATS',
+                payload: { venue_id: venueId, area_id: areaId }
+            });
+
+            if (res.ok) {
+                const { stats } = await res.json();
+                // Expecting array: [{ area_id, total_in, total_out }]
+
+                if (Array.isArray(stats)) {
+                    setState(prev => ({
+                        ...prev,
+                        areas: prev.areas.map(a => {
+                            const stat = stats.find((s: any) => s.area_id === a.id);
+                            if (stat) {
+                                return {
+                                    ...a,
+                                    current_traffic_in: stat.total_in,
+                                    current_traffic_out: stat.total_out
+                                };
+                            }
+                            return a;
+                        })
+                    }));
+                }
+            }
+        } catch (e) {
+            console.error("Failed to refresh traffic stats", e);
         }
     };
 
@@ -899,7 +935,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     return (
-        <AppContext.Provider value={{ ...state, setLastError, recordEvent, recordScan, resetCounts, addUser, updateUser, removeUser, updateBusiness, addClicr, updateClicr, deleteClicr, addVenue, updateVenue, addArea, updateArea, addDevice, updateDevice, deleteDevice, addCapacityOverride, addVenueAuditLog, addBan, revokeBan, createPatronBan, updatePatronBan, recordBanEnforcement }}>
+        <AppContext.Provider value={{ ...state, setLastError, recordEvent, recordScan, resetCounts, refreshTrafficStats, addUser, updateUser, removeUser, updateBusiness, addClicr, updateClicr, deleteClicr, addVenue, updateVenue, addArea, updateArea, addDevice, updateDevice, deleteDevice, addCapacityOverride, addVenueAuditLog, addBan, revokeBan, createPatronBan, updatePatronBan, recordBanEnforcement }}>
             {children}
         </AppContext.Provider>
     );

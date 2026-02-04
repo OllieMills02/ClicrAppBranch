@@ -100,7 +100,12 @@ export type Area = {
     capacity_limit?: number; // map to default_capacity
     active?: boolean; // map to is_active
     current_occupancy?: number; // Server-side calculated true occupancy
+
+    // Traffic Stats (Realtime Sync)
+    current_traffic_in?: number;
+    current_traffic_out?: number;
 };
+
 
 export type FlowMode = 'IN_ONLY' | 'OUT_ONLY' | 'BIDIRECTIONAL';
 

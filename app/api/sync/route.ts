@@ -518,6 +518,53 @@ export async function POST(request: Request) {
                 break;
 
             // ... (Pass through other cases directly) ...
+            case 'GET_TRAFFIC_STATS':
+                // Payload: { venue_id?, area_id?, time_window?: 'TODAY' }
+                // For now, allow "Today" (start of day UTC).
+
+                // Resolve Business ID
+                let statsBizId = userId ? (await supabaseAdmin.from('profiles').select('business_id').eq('id', userId).single()).data?.business_id : null;
+                if (!statsBizId) statsBizId = 'biz_001'; // Fallback
+
+                const now = new Date();
+                const startOfDay = new Date(now);
+                startOfDay.setUTCHours(0, 0, 0, 0); // UTC Midnight
+
+                let query = supabaseAdmin
+                    .from('occupancy_events')
+                    .select('area_id, delta')
+                    .eq('business_id', statsBizId)
+                    .gte('timestamp', startOfDay.toISOString());
+
+                if (payload.venue_id) query = query.eq('venue_id', payload.venue_id);
+                if (payload.area_id) query = query.eq('area_id', payload.area_id);
+
+                const { data: eventsData, error: statsError } = await query;
+
+                if (statsError) {
+                    return NextResponse.json({ error: statsError.message }, { status: 500 });
+                }
+
+                // Aggregation in JS (Simpler than complex SQL via query builder for now, and scalable enough for typical daily events)
+                // Map: area_id -> { total_in, total_out }
+                const statsMap: Record<string, { total_in: number, total_out: number }> = {};
+
+                (eventsData || []).forEach((e: any) => {
+                    const aid = e.area_id || 'unknown';
+                    if (!statsMap[aid]) statsMap[aid] = { total_in: 0, total_out: 0 };
+
+                    if (e.delta > 0) statsMap[aid].total_in += e.delta;
+                    if (e.delta < 0) statsMap[aid].total_out += Math.abs(e.delta);
+                });
+
+                // Convert to array
+                const statsArray = Object.keys(statsMap).map(aid => ({
+                    area_id: aid,
+                    ...statsMap[aid]
+                }));
+
+                return NextResponse.json({ stats: statsArray });
+
             case 'ADD_USER': updatedData = addUser(payload as User); break;
             case 'UPDATE_USER': updatedData = updateUser(payload as User); break;
             case 'REMOVE_USER': updatedData = removeUser(payload.id); break;
