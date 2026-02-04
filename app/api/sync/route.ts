@@ -120,12 +120,35 @@ async function hydrateData(data: DBData, userId?: string): Promise<DBData> {
             });
         }
 
-        // 1. Fetch Occupancy Snapshots (Source of Truth for Counts)
-        const { data: snapshots, error: snapError } = await supabaseAdmin
-            .from('occupancy_snapshots')
-            .select('*');
+        // 1. Fetch Occupancy Snapshots AND Today's Traffic Stats
+        const now = new Date();
+        const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-        if (!snapError && snapshots) {
+        const [
+            { data: snapshots },
+            { data: todayEvents }
+        ] = await Promise.all([
+            // Use effectiveBizId for stricter security if available, otherwise fetch all (legacy/admin)
+            effectiveBizId
+                ? supabaseAdmin.from('occupancy_snapshots').select('*').eq('business_id', effectiveBizId)
+                : supabaseAdmin.from('occupancy_snapshots').select('*'),
+
+            effectiveBizId
+                ? supabaseAdmin.from('occupancy_events').select('area_id, delta').eq('business_id', effectiveBizId).gte('timestamp', startOfDay.toISOString())
+                : Promise.resolve({ data: [] })
+        ]);
+
+        // Aggregate Traffic
+        const statsMap: Record<string, { in: number, out: number }> = {};
+        if (todayEvents) {
+            (todayEvents as any[]).forEach((e) => {
+                if (!statsMap[e.area_id]) statsMap[e.area_id] = { in: 0, out: 0 };
+                if (e.delta > 0) statsMap[e.area_id].in += e.delta;
+                else statsMap[e.area_id].out += Math.abs(e.delta);
+            });
+        }
+
+        if (snapshots) {
             // SELF-HEALING: Identify areas missing snapshots and create them
             const missingSnapshotAreas = data.areas.filter(a => !snapshots.find((s) => s.area_id === a.id));
 
@@ -151,24 +174,21 @@ async function hydrateData(data: DBData, userId?: string): Promise<DBData> {
                 }));
             }
 
-            // Map snapshots to areas
+            // Map snapshots and stats to areas
             data.areas = data.areas.map(a => {
                 const snap = snapshots.find((s) => s.area_id === a.id);
-                // If we just created it, it might not be in 'snapshots' array yet unless we refetch.
-                // But we can safely default to 0 here IF we know we just created it.
-                // However, better robustness is to use the snap if found, else 0 (since we know we tried to create it).
-
                 let validCount = snap ? snap.current_occupancy : 0;
-
-                // Fallback: If snapshot is 0 but we have events, do we trust events?
-                // Spec says: Snapshot is Authoritative. So we trust validCount.
+                const stats = statsMap[a.id] || { in: 0, out: 0 };
 
                 return {
                     ...a,
-                    current_occupancy: validCount
+                    current_occupancy: validCount,
+                    current_traffic_in: stats.in,
+                    current_traffic_out: stats.out
                 };
             });
         }
+
 
         // 2. Fetch Recent Logs (for activity feed)
         const { data: occEvents, error: occError } = await supabaseAdmin

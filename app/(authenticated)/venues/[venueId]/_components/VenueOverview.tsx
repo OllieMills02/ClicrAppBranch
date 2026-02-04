@@ -25,27 +25,18 @@ export default function VenueOverview({ venueId, setActiveTab }: { venueId: stri
     const areaIds = useMemo(() => venueAreas.map(a => a.id), [venueAreas]);
     const venueClicrs = useMemo(() => clicrs.filter(c => areaIds.includes(c.area_id)), [clicrs, areaIds]);
 
-    // Live Stats
-    const currentOccupancy = venueClicrs.reduce((sum, c) => sum + c.current_count, 0);
+    // Live Stats (Source of truth: Area Snapshots)
+    const currentOccupancy = venueAreas.reduce((sum, a) => sum + (a.current_occupancy || 0), 0);
     const capacityPct = venue?.default_capacity_total
         ? (currentOccupancy / venue.default_capacity_total) * 100
         : 0;
 
-    // Traffic Stats (Today)
+    // Traffic Stats (Source of truth: Server Synced Stats on Area)
     const trafficStats = useMemo(() => {
-        let ins = 0;
-        let outs = 0;
-        // Filter events for this venue (either direct venue_id matches, or via area_id)
-        // Store implementation usually associates events with venue_id directly or we check area.
-        // Assuming event has venue_id.
-        const venueEvents = events.filter(e => e.venue_id === venueId);
-
-        venueEvents.forEach(e => {
-            if (e.delta > 0) ins += e.delta;
-            if (e.delta < 0) outs += Math.abs(e.delta);
-        });
+        const ins = venueAreas.reduce((sum, a) => sum + (a.current_traffic_in || 0), 0);
+        const outs = venueAreas.reduce((sum, a) => sum + (a.current_traffic_out || 0), 0);
         return { ins, outs };
-    }, [events, venueId]);
+    }, [venueAreas]);
 
     // Chart Data (Last 6 Hours) - Breakdown by Gender
     const chartData = useMemo(() => {
@@ -219,8 +210,7 @@ export default function VenueOverview({ venueId, setActiveTab }: { venueId: stri
                         <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wider">Area Status</h3>
                         <div className="space-y-4">
                             {venueAreas.slice(0, 5).map(area => {
-                                const areaClicrs = clicrs.filter(c => c.area_id === area.id);
-                                const areaCount = areaClicrs.reduce((s, c) => s + c.current_count, 0);
+                                const areaCount = area.current_occupancy || 0;
                                 const areaCap = area.default_capacity;
                                 const areaPct = areaCap ? (areaCount / areaCap) * 100 : 0;
 
