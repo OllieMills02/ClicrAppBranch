@@ -353,14 +353,14 @@ export async function POST(request: Request) {
                 }
                 const finalEventBizId = eventBizId || 'biz_001';
 
+                // Safe UUID check helper
+                const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+                const safeDeviceId = (event.clicr_id && isUUID(event.clicr_id)) ? event.clicr_id : null;
+                const safeUserId = (userId && isUUID(userId)) ? userId : '00000000-0000-0000-0000-000000000000';
+
                 // ATOMIC UPDATE via RPC
                 try {
-                    // Safe UUID check helper
-                    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-
-                    const safeDeviceId = (event.clicr_id && isUUID(event.clicr_id)) ? event.clicr_id : null;
-                    const safeUserId = (userId && isUUID(userId)) ? userId : '00000000-0000-0000-0000-000000000000';
-
                     const rpcParams = {
                         p_business_id: finalEventBizId,
                         p_venue_id: event.venue_id,
