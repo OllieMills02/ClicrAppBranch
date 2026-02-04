@@ -331,41 +331,42 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         });
 
         try {
-            const supabase = createClient();
-
-            // FALLBACK TO PREVIOUSLY WORKING RPC: process_occupancy_event
-            // The new strict RPC (add_occupancy_delta) might not be deployed on prod yet, causing the breakage.
-            const { data: result, error } = await supabase.rpc('process_occupancy_event', {
-                p_business_id: businessId,
-                p_venue_id: data.venue_id,
-                p_area_id: data.area_id,
-                p_device_id: data.clicr_id,
-                p_user_id: userId, // Required by old RPC
-                p_delta: data.delta,
-                p_flow_type: data.delta > 0 ? 'IN' : 'OUT', // Explicitly derive for old RPC
-                p_event_type: 'clicker',
-                p_session_id: data.clicr_id
+            // Call API Route instead of direct RPC to ensure consistency with Server Logic
+            // This restores the "Yesterday" behavior which was working.
+            const res = await authFetch({
+                action: 'RECORD_EVENT',
+                payload: {
+                    ...data,
+                    business_id: businessId,
+                    user_id: userId,
+                    flow_type: data.delta > 0 ? 'IN' : 'OUT', // Explicitly derive
+                    event_type: 'clicker',
+                    clicr_id: data.clicr_id
+                }
             });
 
-            if (error) throw error;
-
-            // Success - reconcile state with TRUTH from/server if needed
-            // The Realtime subscription will likely catch the update shortly.
-            // But we can also manually update the area occupancy from the result if we want immediate consistency.
-            if (result && typeof result.current_occupancy === 'number') {
-                setState(prev => ({
-                    ...prev,
-                    debug: {
-                        ...prev.debug,
-                        lastWrites: [{ type: 'RPC_SUCCESS', payload: data, result }, ...prev.debug.lastWrites].slice(0, 5)
-                    },
-                    areas: prev.areas.map(a =>
-                        a.id === data.area_id ? { ...a, current_occupancy: result.current_occupancy } : a
-                    )
-                }));
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || 'API Failed');
             }
 
-        } catch (error) {
+            const result = await res.json(); // API result might be the whole DBData or success flag.
+
+            // For the API route we have now, it returns updatedData.
+            // But we already optimistically updated. 
+            // We just need to confirm success.
+
+            // Log Success to Debug
+            setState(prev => ({
+                ...prev,
+                debug: {
+                    ...prev.debug,
+                    lastWrites: [{ type: 'API_SUCCESS', payload: data }, ...prev.debug.lastWrites].slice(0, 5)
+                }
+            }));
+        }
+
+        catch (error) {
             console.error("RPC Failed", error);
             logErrorToUsage(userId, `RPC Error: ${(error as Error).message}`, 'process_occupancy_event', { data });
 
