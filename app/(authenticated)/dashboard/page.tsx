@@ -22,11 +22,9 @@ export default function DashboardPage() {
     // Helper to get stats for a specific venue
     const getVenueStats = (venueId: string) => {
         const venueAreas = areas.filter(a => a.venue_id === venueId);
-        const areaIds = venueAreas.map(a => a.id);
-        const venueClicrs = clicrs.filter(c => areaIds.includes(c.area_id));
 
-        // Calculate Occupancy (Live)
-        const occupancy = venueClicrs.reduce((sum, c) => sum + c.current_count, 0);
+        // Calculate Occupancy (Live - based on Area Snapshots which are the Source of Truth)
+        const occupancy = venueAreas.reduce((sum, a) => sum + (a.current_occupancy || 0), 0);
 
         // Calculate In/Out (Today) based on Server Stats (Realtime Synced)
         // We now rely on the 'current_traffic_in/out' fields on the Area object, populated by refreshTrafficStats
@@ -41,9 +39,7 @@ export default function DashboardPage() {
             inCount,
             outCount,
             areas: venueAreas.map(a => {
-                const aClicrs = clicrs.filter(c => c.area_id === a.id);
-                const aOcc = aClicrs.reduce((s, c) => s + c.current_count, 0);
-                return { ...a, currentOccupancy: aOcc };
+                return { ...a, currentOccupancy: a.current_occupancy || 0 };
             }),
             capacity: venueTotalCap,
             pct: venueTotalCap > 0 ? (occupancy / venueTotalCap) * 100 : 0
