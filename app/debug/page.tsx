@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
+import RuntimeInspector from './RuntimeInspector';
 
 export default async function DebugPage() {
     const supabase = await createClient();
@@ -98,7 +99,10 @@ export default async function DebugPage() {
                         <pre className="text-xs overflow-auto bg-slate-50 p-2 rounded">{JSON.stringify(profile, null, 2)}</pre>
                     )}
                 </section>
+
+                <RuntimeInspector />
             </div>
         </div>
     )
 }
+

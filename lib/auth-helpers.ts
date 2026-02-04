@@ -8,7 +8,7 @@ export async function resolvePostAuthRoute(userId: string) {
     // 1. Get Memberships
     const { data: memberships, error } = await supabase
         .from('business_members')
-        .select('business_id, is_default, businesses(onboarding_completed_at)')
+        .select('business_id, is_default, businesses(settings)')
         .eq('user_id', userId);
 
     if (error || !memberships || memberships.length === 0) {
@@ -20,12 +20,13 @@ export async function resolvePostAuthRoute(userId: string) {
     const targetMembership = memberships.find(m => m.is_default) || memberships[0];
 
     // 3. Check Onboarding Status of that Business
-    // 'businesses' is an array or object depending on join, cast safely
-    const businessData = targetMembership.businesses as { onboarding_completed_at?: string } | null;
+    const val = targetMembership.businesses as unknown;
+    // Handle Supabase join which can be array or object
+    const businessData = (Array.isArray(val) ? val[0] : val) as { settings: { onboarding_completed_at?: string } } | null;
+    const isComplete = businessData?.settings?.onboarding_completed_at;
 
-    if (!businessData?.onboarding_completed_at) {
+    if (!isComplete) {
         // Business exists but onboarding not marked done -> Resume Onboarding
-        // We could query onboarding_progress here to be specific, but /onboarding handles routing internally too
         return '/onboarding';
     }
 

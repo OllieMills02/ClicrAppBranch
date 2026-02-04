@@ -93,15 +93,29 @@ export async function submitScanAction(
 
             // If Accepted, also increment Occupancy
             if (scanEvent.scan_result === 'ACCEPTED') {
-                // ... (existing occupancy increment)
-                await supabaseAdmin.from('occupancy_events').insert({
-                    business_id: businessId,
-                    venue_id: venueId,
-                    timestamp: scanEvent.timestamp,
-                    flow_type: 'IN',
-                    delta: 1,
-                    event_type: 'SCAN'
-                });
+                // Fetch first area for venue (assume General Admission/Default)
+                const { data: areaData } = await supabaseAdmin
+                    .from('areas')
+                    .select('id')
+                    .eq('venue_id', venueId)
+                    .limit(1)
+                    .single();
+
+                if (areaData?.id) {
+                    await supabaseAdmin.rpc('process_occupancy_event', {
+                        p_business_id: businessId,
+                        p_venue_id: venueId,
+                        p_area_id: areaData.id,
+                        p_device_id: 'SCANNER',
+                        p_user_id: null,
+                        p_delta: 1,
+                        p_flow_type: 'IN',
+                        p_event_type: 'SCAN',
+                        p_session_id: null
+                    });
+                } else {
+                    console.warn(`[Scan] No area found for venue ${venueId} - skipping occupancy increment`);
+                }
             }
         }
     } catch (e) {

@@ -22,7 +22,7 @@ test.describe('CLICR E2E Scenarios', () => {
 
     test('01. Critical Flow: Login and Dashboard Load', async ({ page }) => {
         await login(page);
-        await expect(page.getByText('Real-Time Occupancy')).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
     });
 
     test('02. Clicr Lifecycle: Create, Persist, Delete', async ({ page }) => {

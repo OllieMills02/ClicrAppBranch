@@ -99,7 +99,7 @@ type AppContextType = AppState & {
     recordBanEnforcement: (event: BanEnforcementEvent) => Promise<void>;
 };
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+export const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
     const [state, setState] = useState<AppState>({
