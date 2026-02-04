@@ -3,6 +3,14 @@ import { test, expect } from '@playwright/test';
 const BASE_URL = 'http://localhost:3000';
 
 test.describe('P0 Critical Fixes', () => {
+
+    // Deploy RPCs and Fix RLS before tests
+    test.beforeAll(async ({ request }) => {
+        const response = await request.get(`${BASE_URL}/api/admin/deploy-rpc`);
+        expect(response.status()).toBe(200);
+        console.log("Deployed RPCs and RLS Fixes");
+    });
+
     // 1. Occupancy Glitch Test
     test('Occupancy should update smoothly without flashing to 0', async ({ page }) => {
         // Mock Login State via Storage State or direct injection if needed.

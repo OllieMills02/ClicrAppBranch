@@ -4,7 +4,23 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 export async function GET() {
     try {
         const sql = `
-            -- 1. Ensure Table Exists and has RLS
+            -- 0. Ensure Tables Exist
+            CREATE TABLE IF NOT EXISTS occupancy_events (
+                id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+                business_id uuid NOT NULL,
+                venue_id uuid,
+                area_id uuid,
+                device_id uuid,
+                user_id uuid,
+                delta int,
+                flow_type text,
+                event_type text,
+                session_id text,
+                created_at timestamptz DEFAULT now(),
+                timestamp timestamptz DEFAULT now()
+            );
+            ALTER TABLE occupancy_events ENABLE ROW LEVEL SECURITY;
+
             CREATE TABLE IF NOT EXISTS occupancy_snapshots (
                 area_id uuid PRIMARY KEY,
                 business_id uuid NOT NULL,
@@ -14,10 +30,8 @@ export async function GET() {
                 updated_at timestamptz DEFAULT now(),
                 CONSTRAINT unique_area CURR_OFF_AREA UNIQUE(area_id)
             );
-            
             ALTER TABLE occupancy_snapshots ENABLE ROW LEVEL SECURITY;
 
-            -- 1b. App Errors Table
             CREATE TABLE IF NOT EXISTS app_errors (
                 id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
                 feature text,
@@ -31,7 +45,24 @@ export async function GET() {
             );
             ALTER TABLE app_errors ENABLE ROW LEVEL SECURITY;
 
-            -- 2. Create the RPC function (add_occupancy_delta)
+            -- 0b. RLS Policies (Idempotent-ish via DO block)
+            DO $$ 
+            BEGIN
+                -- Occupancy Events
+                IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow read authenticated' AND tablename = 'occupancy_events') THEN
+                    CREATE POLICY "Allow read authenticated" ON occupancy_events FOR SELECT TO authenticated USING (true);
+                END IF;
+                 IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow insert authenticated' AND tablename = 'occupancy_events') THEN
+                    CREATE POLICY "Allow insert authenticated" ON occupancy_events FOR INSERT TO authenticated WITH CHECK (true);
+                END IF;
+
+                -- Snapshots
+                IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow read authenticated' AND tablename = 'occupancy_snapshots') THEN
+                    CREATE POLICY "Allow read authenticated" ON occupancy_snapshots FOR SELECT TO authenticated USING (true);
+                END IF;
+            END $$;
+
+            -- 1. Create the RPC function (add_occupancy_delta)
             CREATE OR REPLACE FUNCTION add_occupancy_delta(
                 p_business_id uuid,
                 p_venue_id uuid,
@@ -51,7 +82,7 @@ export async function GET() {
                 -- 1. Insert the event
                 INSERT INTO occupancy_events (
                     business_id, venue_id, area_id, device_id, 
-                    timestamp, delta, event_type, flow_type
+                    created_at, delta, event_type, flow_type
                 ) VALUES (
                     p_business_id, p_venue_id, p_area_id, p_device_id::uuid,
                     now(), p_delta, p_source, 
@@ -91,7 +122,7 @@ export async function GET() {
             END;
             $$;
 
-            -- 3. Traffic Totals RPC (Summary / Single Row)
+            -- 2. Traffic Totals RPC (Summary / Single Row)
             CREATE OR REPLACE FUNCTION get_traffic_totals(
                 p_business_id uuid,
                 p_venue_id uuid DEFAULT NULL,
@@ -118,16 +149,16 @@ export async function GET() {
                 WHERE oe.business_id = p_business_id
                 AND (p_venue_id IS NULL OR oe.venue_id = p_venue_id)
                 AND (p_area_id IS NULL OR oe.area_id = p_area_id)
-                AND oe.timestamp >= p_start_ts
-                AND oe.timestamp <= p_end_ts;
+                AND oe.created_at >= p_start_ts  -- FIX: Use created_at
+                AND oe.created_at <= p_end_ts;
             END;
             $$;
 
-            -- 4. Reset Counts RPC (Transactional)
+            -- 3. Reset Counts RPC (Transactional)
             CREATE OR REPLACE FUNCTION reset_counts(
                 p_business_id uuid,
-                p_scope text, -- 'AREA', 'VENUE', 'BUSINESS'
-                p_target_id uuid, -- ID of the specific scope
+                p_scope text, 
+                p_target_id uuid, 
                 p_user_id uuid
             ) RETURNS jsonb
             LANGUAGE plpgsql
@@ -137,7 +168,6 @@ export async function GET() {
                 v_affected_count int;
                 v_area_record RECORD;
             BEGIN
-                -- Loop through affected areas to log reset events
                 FOR v_area_record IN 
                     SELECT area_id, current_occupancy, venue_id FROM occupancy_snapshots
                     WHERE business_id = p_business_id
@@ -148,21 +178,14 @@ export async function GET() {
                     )
                     AND current_occupancy != 0
                 LOOP
-                    -- Insert reset event to track 'out' flow for history, 
-                    -- BUT commonly 'reset' events are EXCLUDED from traffic totals. 
-                    -- However, user said: "Representing the delta needed to return to 0".
-                    -- If we count it as 'OUT', then resetting 100 people adds 100 to OUT stats. 
-                    -- User requirements didn't specify exclusion, but "Source=reset" implies we can filter it if needed.
-                    -- We will insert it.
                     INSERT INTO occupancy_events (
-                        business_id, venue_id, area_id, delta, event_type, flow_type, user_id, timestamp
+                        business_id, venue_id, area_id, delta, event_type, flow_type, user_id, created_at
                     ) VALUES (
                         p_business_id, v_area_record.venue_id, v_area_record.area_id, 
-                        -v_area_record.current_occupancy, 'RESET', 'OUT', p_user_id, now() -- Source='RESET'
+                        -v_area_record.current_occupancy, 'RESET', 'OUT', p_user_id, now()
                     );
                 END LOOP;
 
-                -- Update Snapshots to 0
                 UPDATE occupancy_snapshots
                 SET current_occupancy = 0, updated_at = now()
                 WHERE business_id = p_business_id
