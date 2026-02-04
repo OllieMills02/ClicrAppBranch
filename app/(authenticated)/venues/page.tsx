@@ -27,9 +27,9 @@ export default function VenuesPage() {
         const venueAreas = areas.filter(a => a.venue_id === venueId);
         const areaIds = venueAreas.map(a => a.id);
 
-        // Sum counts from Clicrs (counters) in these areas
+        // Sum counts from Area Snapshots (Source of Truth)
         const venueClicrs = clicrs.filter(c => areaIds.includes(c.area_id));
-        const currentOccupancy = venueClicrs.reduce((sum, c) => sum + c.current_count, 0);
+        const currentOccupancy = venueAreas.reduce((sum, a) => sum + (a.current_occupancy || 0), 0);
 
         // Devices count (both Clicrs and generic Devices assigned to venue/areas)
         // Note: Clicrs are transitioning to Devices, but we might have both. 

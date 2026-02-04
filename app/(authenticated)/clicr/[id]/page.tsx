@@ -11,6 +11,7 @@ import { parseAAMVA } from '@/lib/aamva';
 import { evaluateScan } from '@/lib/scan-service';
 import { Html5Qrcode } from 'html5-qrcode';
 import { getVenueCapacityRules } from '@/lib/capacity';
+import { getTrafficTotals, getTodayWindow } from '@/lib/metrics-service';
 
 // Mock data generator for simulation
 const generateMockID = () => {
@@ -80,9 +81,23 @@ export default function ClicrCounterPage() {
 
     // Keep event-based stats for "Session" view if needed, but rely on snapshots for enforcement
     const venueEvents = (events || []).filter(e => e.venue_id === venueId);
-    // Traffic Stats (Source: Server Aggregated)
-    const globalIn = venueAreas.reduce((sum, a) => sum + (a.current_traffic_in || 0), 0);
-    const globalOut = venueAreas.reduce((sum, a) => sum + (a.current_traffic_out || 0), 0);
+    // Traffic Stats (Source: Server Aggregated via Service)
+    const [trafficStats, setTrafficStats] = useState({ total_in: 0, total_out: 0 });
+
+    useEffect(() => {
+        if (!venueId || !venue?.business_id) return;
+        const fetchTraffic = async () => {
+            const stats = await getTrafficTotals({
+                business_id: venue.business_id,
+                venue_id: venueId
+            }, getTodayWindow());
+            setTrafficStats(stats);
+        };
+        fetchTraffic();
+    }, [venueId, venue?.business_id, events]); // Re-fetch on events
+
+    const globalIn = trafficStats.total_in;
+    const globalOut = trafficStats.total_out;
 
     // DEBUG PANEL STATE
     const [showDebug, setShowDebug] = useState(false);
@@ -1101,6 +1116,81 @@ export default function ClicrCounterPage() {
                     </div>
                 )}
             </AnimatePresence>
+            {/* DEBUG PANEL - OWNER ONLY */}
+            <AnimatePresence>
+                {showDebug && (
+                    <motion.div
+                        initial={{ x: '100%' }}
+                        animate={{ x: 0 }}
+                        exit={{ x: '100%' }}
+                        className="fixed inset-y-0 right-0 w-80 bg-slate-950 border-l border-slate-800 p-6 z-[200] overflow-y-auto shadow-2xl"
+                    >
+                        <h3 className="text-white font-bold mb-6 flex items-center gap-2">
+                            <Bug className="w-5 h-5 text-indigo-400" />
+                            Sync Debugger
+                        </h3>
+
+                        <div className="space-y-6">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Context</label>
+                                <div className="text-xs text-slate-300 font-mono bg-slate-900 p-2 rounded border border-slate-800 break-all">
+                                    UID: {currentUser?.id}<br />
+                                    BIZ: {venue?.business_id}<br />
+                                    VEN: {venueId}<br />
+                                    AREA: {clicr?.area_id}
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Snapshot Truth</label>
+                                <div className="p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-lg text-emerald-400 font-mono text-2xl font-bold flex items-center justify-between">
+                                    {currentArea ? currentArea.current_occupancy : 'N/A'}
+                                    <span className="text-[10px] text-emerald-600 uppercase">Server State</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Realtime Status</label>
+                                <div className="flex items-center gap-2">
+                                    <div className={cn("w-2 h-2 rounded-full", debug?.realtimeStatus === 'SUBSCRIBED' ? "bg-emerald-500 animate-pulse" : "bg-amber-500")} />
+                                    <span className="text-sm text-white font-mono">{debug?.realtimeStatus || 'UNKNOWN'}</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Last 5 Writes</label>
+                                <div className="space-y-2">
+                                    {debug?.lastWrites?.map((w: any, i: number) => (
+                                        <div key={i} className="bg-slate-900 p-2 rounded text-[10px] font-mono border border-slate-800">
+                                            <div className={cn("font-bold mb-1", w.type === 'RPC_SUCCESS' ? "text-emerald-400" : "text-red-400")}>
+                                                {w.type}
+                                            </div>
+                                            <div className="text-slate-400 truncate">
+                                                {JSON.stringify(w.payload)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {!debug?.lastWrites?.length && <div className="text-xs text-slate-600 italic">No writes yet</div>}
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Last 5 Events</label>
+                                <div className="space-y-2">
+                                    {debug?.lastEvents?.map((e: any, i: number) => (
+                                        <div key={i} className="bg-slate-900 p-2 rounded text-[10px] font-mono border border-slate-800">
+                                            <div className="text-indigo-400 font-bold mb-1">{e.eventType}</div>
+                                            <div className="text-slate-400 break-all">
+                                                {JSON.stringify(e.new || e.old)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
@@ -1179,81 +1269,7 @@ function SplitCounterPart({
                 </motion.button>
             </div>
 
-            {/* DEBUG PANEL - OWNER ONLY */}
-            <AnimatePresence>
-                {showDebug && (
-                    <motion.div
-                        initial={{ x: '100%' }}
-                        animate={{ x: 0 }}
-                        exit={{ x: '100%' }}
-                        className="fixed inset-y-0 right-0 w-80 bg-slate-950 border-l border-slate-800 p-6 z-[200] overflow-y-auto shadow-2xl"
-                    >
-                        <h3 className="text-white font-bold mb-6 flex items-center gap-2">
-                            <Bug className="w-5 h-5 text-indigo-400" />
-                            Sync Debugger
-                        </h3>
 
-                        <div className="space-y-6">
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Context</label>
-                                <div className="text-xs text-slate-300 font-mono bg-slate-900 p-2 rounded border border-slate-800 break-all">
-                                    UID: {currentUser?.id}<br />
-                                    BIZ: {clicr?.business_id}<br />
-                                    VEN: {venueId}<br />
-                                    AREA: {clicr?.area_id}
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Snapshot Truth</label>
-                                <div className="p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-lg text-emerald-400 font-mono text-2xl font-bold flex items-center justify-between">
-                                    {currentArea ? currentArea.current_occupancy : 'N/A'}
-                                    <span className="text-[10px] text-emerald-600 uppercase">Server State</span>
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Realtime Status</label>
-                                <div className="flex items-center gap-2">
-                                    <div className={cn("w-2 h-2 rounded-full", debug?.realtimeStatus === 'SUBSCRIBED' ? "bg-emerald-500 animate-pulse" : "bg-amber-500")} />
-                                    <span className="text-sm text-white font-mono">{debug?.realtimeStatus || 'UNKNOWN'}</span>
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Last 5 Writes</label>
-                                <div className="space-y-2">
-                                    {debug?.lastWrites?.map((w: any, i: number) => (
-                                        <div key={i} className="bg-slate-900 p-2 rounded text-[10px] font-mono border border-slate-800">
-                                            <div className={cn("font-bold mb-1", w.type === 'RPC_SUCCESS' ? "text-emerald-400" : "text-red-400")}>
-                                                {w.type}
-                                            </div>
-                                            <div className="text-slate-400 truncate">
-                                                {JSON.stringify(w.payload)}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {!debug?.lastWrites?.length && <div className="text-xs text-slate-600 italic">No writes yet</div>}
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Last 5 Events</label>
-                                <div className="space-y-2">
-                                    {debug?.lastEvents?.map((e: any, i: number) => (
-                                        <div key={i} className="bg-slate-900 p-2 rounded text-[10px] font-mono border border-slate-800">
-                                            <div className="text-indigo-400 font-bold mb-1">{e.eventType}</div>
-                                            <div className="text-slate-400 break-all">
-                                                {JSON.stringify(e.new || e.old)}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </div>
     );
 }

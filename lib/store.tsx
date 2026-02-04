@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { Business, Venue, Area, Clicr, CountEvent, User, IDScanEvent, BanRecord, BannedPerson, PatronBan, BanEnforcementEvent, BanAuditLog, Device, CapacityOverride, VenueAuditLog } from './types';
 import { createClient } from '@/utils/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { getTrafficTotals, getTodayWindow, TrafficStats } from './metrics-service';
+import { RealtimeManager } from './realtime-manager';
 
 const INITIAL_USER: User = {
     id: 'usr_owner',
@@ -13,6 +15,15 @@ const INITIAL_USER: User = {
     assigned_venue_ids: [],
     assigned_area_ids: [],
     assigned_clicr_ids: [],
+};
+
+const INITIAL_TRAFFIC: TrafficStats = {
+    total_in: 0,
+    total_out: 0,
+    net_delta: 0,
+    event_count: 0,
+    period: getTodayWindow(),
+    source: 'init'
 };
 
 export type AppState = {
@@ -29,6 +40,9 @@ export type AppState = {
     users: User[];
     bans: BanRecord[];
 
+    // Traffic Stats (Business Level Source of Truth)
+    traffic: TrafficStats;
+
     // Patron Banning System
     patrons: BannedPerson[];
     patronBans: PatronBan[];
@@ -43,6 +57,7 @@ export type AppState = {
         realtimeStatus: string;
         lastEvents: unknown[];
         lastWrites: unknown[];
+        lastSnapshots: unknown[];
     };
 };
 
@@ -117,6 +132,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         users: [],
         bans: [],
 
+        traffic: INITIAL_TRAFFIC,
+
         patrons: [],
         patronBans: [],
         banAuditLogs: [],
@@ -127,11 +144,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         debug: {
             realtimeStatus: 'CONNECTING',
             lastEvents: [],
-            lastWrites: []
+            lastWrites: [],
+            lastSnapshots: []
         }
     });
 
     const isResettingRef = useRef(false);
+    const realtimeManager = useRef(new RealtimeManager());
+
+    // 1. Unified Traffic Refetcher
+    const refreshTrafficStats = useCallback(async (venueId?: string, areaId?: string) => {
+        const businessId = state.business?.id;
+        if (!businessId) return;
+
+        // Fetch Global Business Stats (Metrics Service)
+        const globalStats = await getTrafficTotals({ business_id: businessId }, getTodayWindow());
+
+        setState(prev => ({
+            ...prev,
+            traffic: globalStats
+        }));
+    }, [state.business?.id]);
 
     const refreshState = useCallback(async () => {
         if (isResettingRef.current || isWritingRef.current) {
@@ -161,12 +194,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             if (res.ok) {
                 const data = await res.json();
 
-                // If we have a logged in user, ensure currentUser reflects that
-                // The API should handle mapping the x-user-id to the correct user in the DB
-                // but if it returned a different currentUser, we accept it.
-                // However, if we just logged in, we might need to force the state.currentUser to match
-                // We trust the API to return the "hydrated" user object for this ID.
-
                 // Avoid overwriting optimistic state if a write started while we were fetching
                 if (isWritingRef.current) {
                     console.log("Skipping sync update due to active write (Pre-setState)");
@@ -191,16 +218,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) {
             console.error("Failed to sync state", error);
             setState(prev => ({ ...prev, isLoading: false }));
-            // safe access to state inside callback? using prev is better, but here we just read ID for logging
-            // logErrorToUsage(state.currentUser?.id, (error as Error).message, 'refreshState');
-            // Avoiding state dep here to keep stable
         }
-    }, []); // Empty dep array? It uses state.currentUser only for logging. I removed the log dependency.
+    }, []);
 
-    // Initial load, polling, AND Realtime Subscription
+    // Initial load, polling
     useEffect(() => {
         refreshState();
-        const interval = setInterval(refreshState, 2000); // Keep polling as backup/sync mechanism
+        const interval = setInterval(refreshState, 5000); // Poll slower
 
         // Re-sync on tab focus
         const handleVisibilityChange = () => {
@@ -215,77 +239,63 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             clearInterval(interval);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [refreshState]);
 
-    // REALTIME SUBSCRIPTION
+    // Realtime Manager Hookup
     useEffect(() => {
-        const supabase = createClient();
-        let channel: RealtimeChannel | null = null;
-        const bizId = state.business?.id;
+        const busId = state.business?.id;
+        if (busId) {
+            realtimeManager.current.subscribe(busId, {
+                onStatusChange: (status) => {
+                    setState(prev => ({ ...prev, debug: { ...prev.debug, realtimeStatus: status } }));
+                    if (status === 'SUBSCRIBED') {
+                        refreshState();
+                        refreshTrafficStats();
+                    }
+                },
+                onSnapshot: (payload) => {
+                    const newSnap = payload.new;
+                    // Debug Log
+                    setState(prev => ({
+                        ...prev,
+                        debug: {
+                            ...prev.debug,
+                            lastSnapshots: [newSnap, ...prev.debug.lastSnapshots].slice(0, 5)
+                        }
+                    }));
 
-        if (bizId) {
-            console.log(`[Realtime] Subscribing to business: ${bizId}`);
-            setState(prev => ({ ...prev, debug: { ...prev.debug, realtimeStatus: 'CONNECTING' } }));
-
-            channel = supabase.channel(`occupancy_strict_${bizId}`)
-                .on(
-                    'postgres_changes',
-                    {
-                        event: '*',
-                        schema: 'public',
-                        table: 'occupancy_snapshots',
-                        filter: `business_id=eq.${bizId}` // Strict Filter by Tenant
-                    },
-                    (payload) => {
-                        console.log('[Realtime] Snapshot Update:', payload);
-
-                        // Instrumentation
+                    // Update Live Occupancy in State
+                    if (newSnap && newSnap.area_id) {
                         setState(prev => ({
                             ...prev,
-                            debug: {
-                                ...prev.debug,
-                                lastEvents: [payload, ...prev.debug.lastEvents].slice(0, 5)
-                            }
+                            areas: prev.areas.map(a => {
+                                if (a.id === newSnap.area_id) {
+                                    // console.log(`[Realtime] Area ${a.name} -> ${newSnap.current_occupancy}`);
+                                    return { ...a, current_occupancy: newSnap.current_occupancy };
+                                }
+                                return a;
+                            })
                         }));
-
-                        if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-                            const newSnap = payload.new as { area_id: string, current_occupancy: number };
-                            setState(prev => ({
-                                ...prev,
-                                areas: prev.areas.map(a => {
-                                    if (a.id === newSnap.area_id) {
-                                        console.log(`[Realtime] Updating Area ${a.name} (${a.id}) to ${newSnap.current_occupancy}`);
-                                        return {
-                                            ...a,
-                                            current_occupancy: newSnap.current_occupancy
-                                        };
-                                    }
-                                    return a;
-                                })
-                            }));
+                    }
+                },
+                onEvent: (payload) => {
+                    const newEvent = payload.new;
+                    setState(prev => ({
+                        ...prev,
+                        debug: {
+                            ...prev.debug,
+                            lastEvents: [newEvent, ...prev.debug.lastEvents].slice(0, 5)
                         }
-                    }
-                )
-                .subscribe((status) => {
-                    console.log(`[Realtime] Status changed: ${status}`);
-                    setState(prev => ({ ...prev, debug: { ...prev.debug, realtimeStatus: status } }));
-
-                    if (status === 'SUBSCRIBED') {
-                        // RECONNECT SAFETY: Refetch source of truth to ensure no gap
-                        refreshState();
-                    }
-                });
+                    }));
+                    // REFETCH TOTALS ON EVENT
+                    refreshTrafficStats();
+                }
+            });
         }
+        return () => realtimeManager.current.unsubscribe();
+    }, [state.business?.id, refreshState, refreshTrafficStats]);
 
-        return () => {
-            if (channel) {
-                console.log("[Realtime] Unsubscribing...");
-                supabase.removeChannel(channel);
-            }
-        };
-    }, [state.business?.id]);
-
+    // Auth Fetch helper
     const authFetch = async (body: Record<string, unknown>) => {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
@@ -299,6 +309,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     // Simple lock to prevent polling from overwriting optimistic updates during active writes
     const isWritingRef = useRef(false);
+
 
     const recordEvent = async (data: Omit<CountEvent, 'id' | 'timestamp' | 'user_id' | 'business_id'>) => {
         if (!state.business) return;
@@ -428,51 +439,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
 
 
-    const refreshTrafficStats = async (venueId?: string, areaId?: string) => {
-        const businessId = state.business?.id;
-        if (!businessId) return;
 
-        try {
-            // New dedicated endpoint
-            const res = await fetch('/api/rpc/traffic', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    business_id: businessId,
-                    venue_id: venueId,
-                    area_id: areaId,
-                    range_type: 'TODAY'
-                })
-            });
-
-            if (res.ok) {
-                const { stats } = await res.json();
-                if (Array.isArray(stats)) {
-                    setState(prev => ({
-                        ...prev,
-                        areas: prev.areas.map(a => {
-                            const stat = stats.find((s: any) => s.area_id === a.id);
-                            if (stat) {
-                                return {
-                                    ...a,
-                                    current_traffic_in: stat.total_in,
-                                    current_traffic_out: stat.total_out
-                                };
-                            }
-                            // If not found in stats (no traffic today), set to 0 to be safe?
-                            // Or leave as is? If we fetched *all* stats for business, missing means 0.
-                            // If we fetched specific venue, missing in that venue means 0.
-                            // Safest is to only update if stat found OR if we know we fetched universal scope.
-                            // For now, update if found.
-                            return a;
-                        })
-                    }));
-                }
-            }
-        } catch (e) {
-            console.error("Failed to refresh traffic stats", e);
-        }
-    };
 
     const resetCounts = async (scope: 'AREA' | 'VENUE' | 'BUSINESS', targetId: string) => {
         const businessId = state.business?.id;

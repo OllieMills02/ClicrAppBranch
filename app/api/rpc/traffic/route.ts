@@ -1,38 +1,46 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
-// Helper to get start/end of day in UTC or specific offset
-// Logic: If user passes 'Today', we default to UTC day.
-function getTimeRange(rangeType: string, customStart?: string, customEnd?: string) {
-    const now = new Date();
-
-    if (customStart && customEnd) {
-        return { start: customStart, end: customEnd };
-    }
-
-    if (rangeType === 'TODAY' || !rangeType) {
-        const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        return { start: start.toISOString(), end: now.toISOString() };
-    }
-
-    // Default fallback
-    return { start: new Date(Date.now() - 86400000).toISOString(), end: now.toISOString() };
-}
-
 export async function POST(request: Request) {
     try {
-        const { business_id, venue_id, area_id, range_type, start_ts, end_ts } = await request.json();
+        const { business_id, venue_id, area_id, start_ts, end_ts } = await request.json();
 
         if (!business_id) {
             return NextResponse.json({ error: 'Business ID required' }, { status: 400 });
         }
 
-        const { start, end } = getTimeRange(range_type, start_ts, end_ts);
+        // Validate Timestamps (Required for correctness)
+        const start = start_ts ? new Date(start_ts).toISOString() : new Date(Date.now() - 86400000).toISOString();
+        const end = end_ts ? new Date(end_ts).toISOString() : new Date().toISOString();
 
-        // Fetch Events
+        // 1. Try RPC Approach (Optimal)
+        const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_traffic_totals', {
+            p_business_id: business_id,
+            p_venue_id: venue_id || null,
+            p_area_id: area_id || null,
+            p_start_ts: start,
+            p_end_ts: end
+        });
+
+        if (!rpcError && rpcData && rpcData.length > 0) {
+            // RPC returns array of 1 row usually
+            const row = rpcData[0];
+            return NextResponse.json({
+                total_in: Number(row.total_in || 0),
+                total_out: Number(row.total_out || 0),
+                net_delta: Number(row.net_delta || 0),
+                event_count: Number(row.event_count || 0),
+                period: { start, end },
+                source: 'rpc'
+            });
+        }
+
+        // 2. Fallback: Aggregation in Node (Robustness)
+        console.warn("Traffic RPC failed or missing, falling back to local aggregation:", rpcError?.message);
+
         let query = supabaseAdmin
             .from('occupancy_events')
-            .select('area_id, delta')
+            .select('delta, flow_type')
             .eq('business_id', business_id)
             .gte('timestamp', start)
             .lte('timestamp', end);
@@ -44,37 +52,29 @@ export async function POST(request: Request) {
 
         if (error) throw error;
 
-        // Aggregate locally
-        const statsMap: Record<string, { in: number, out: number }> = {};
+        let total_in = 0;
+        let total_out = 0;
+        let net_delta = 0;
+        const event_count = events?.length || 0;
 
         events?.forEach((e: any) => {
-            if (!statsMap[e.area_id]) statsMap[e.area_id] = { in: 0, out: 0 };
-            if (e.delta > 0) {
-                statsMap[e.area_id].in += e.delta;
-            } else {
-                statsMap[e.area_id].out += Math.abs(e.delta);
-            }
+            const d = e.delta;
+            net_delta += d;
+            if (d > 0) total_in += d;
+            else total_out += Math.abs(d);
         });
 
-        // If specific area requested, return object, else array
-        if (area_id) {
-            return NextResponse.json({
-                area_id,
-                ...statsMap[area_id] || { in: 0, out: 0 },
-                period: { start, end }
-            });
-        }
-
-        // Return array for all found areas
-        const stats = Object.entries(statsMap).map(([id, val]) => ({
-            area_id: id,
-            total_in: val.in,
-            total_out: val.out
-        }));
-
-        return NextResponse.json({ stats, period: { start, end } });
+        return NextResponse.json({
+            total_in,
+            total_out,
+            net_delta,
+            event_count,
+            period: { start, end },
+            source: 'fallback_node'
+        });
 
     } catch (e) {
+        console.error("Traffic API Error", e);
         return NextResponse.json({ error: (e as Error).message }, { status: 500 });
     }
 }
