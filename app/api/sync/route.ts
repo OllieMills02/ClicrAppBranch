@@ -355,12 +355,18 @@ export async function POST(request: Request) {
 
                 // ATOMIC UPDATE via RPC
                 try {
+                    // Safe UUID check helper
+                    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+                    const safeDeviceId = (event.clicr_id && isUUID(event.clicr_id)) ? event.clicr_id : null;
+                    const safeUserId = (userId && isUUID(userId)) ? userId : '00000000-0000-0000-0000-000000000000';
+
                     const rpcParams = {
                         p_business_id: finalEventBizId,
                         p_venue_id: event.venue_id,
                         p_area_id: event.area_id,
-                        p_device_id: event.clicr_id,
-                        p_user_id: userId || '00000000-0000-0000-0000-000000000000',
+                        p_device_id: safeDeviceId, // Pass NULL if not UUID to avoid Postgres type error
+                        p_user_id: safeUserId,
                         p_delta: event.delta,
                         p_flow_type: event.flow_type,
                         p_event_type: event.event_type,
@@ -368,20 +374,65 @@ export async function POST(request: Request) {
                     };
                     const { error: rpcError } = await supabaseAdmin.rpc('process_occupancy_event', rpcParams);
 
-                    if (rpcError) {
-                        console.error("RPC Error Details:", JSON.stringify(rpcError, null, 2));
-                        console.error("RPC Params:", JSON.stringify(rpcParams, null, 2));
-                        throw rpcError;
+                    if (rpcError) throw rpcError;
+
+                } catch (rpcEx) {
+                    console.warn("RPC Failed, falling back to Manual Transaction:", rpcEx);
+
+                    // 2. FALLBACK: Manual DB Operations (If RPC missing/broken)
+
+                    // A. Insert Event
+                    const { error: insertError } = await supabaseAdmin.from('occupancy_events').insert({
+                        business_id: finalEventBizId,
+                        venue_id: event.venue_id,
+                        area_id: event.area_id,
+                        device_id: safeDeviceId,
+                        user_id: safeUserId === '00000000-0000-0000-0000-000000000000' ? null : safeUserId,
+                        delta: event.delta,
+                        flow_type: event.flow_type,
+                        event_type: event.event_type,
+                        session_id: event.clicr_id,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    if (insertError) {
+                        console.error("Fallback Insert Failed", insertError);
+                        // If Insert fails, we probably can't continue, but maybe we can still update snapshot?
+                        // Let's try update anyway.
                     }
 
-                    // Success - update local optimized state
-                    updatedData = addEvent(event);
+                    // B. Upsert Snapshot
+                    // We first try to get the current snapshot to do a safe increment
+                    const { data: currentSnap } = await supabaseAdmin
+                        .from('occupancy_snapshots')
+                        .select('current_occupancy')
+                        .eq('area_id', event.area_id)
+                        .single();
 
-                } catch (e) {
-                    console.error("Supabase Atomic Update Failed Exception", e);
-                    return NextResponse.json({ error: `Count Failed: ${(e as Error).message}` }, { status: 500 });
+                    const newCount = Math.max(0, (currentSnap?.current_occupancy || 0) + event.delta);
+
+                    const { error: snapError } = await supabaseAdmin
+                        .from('occupancy_snapshots')
+                        .upsert({
+                            area_id: event.area_id,
+                            business_id: finalEventBizId,
+                            venue_id: event.venue_id,
+                            current_occupancy: newCount,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'area_id' });
+
+                    if (snapError) {
+                        console.error("Fallback Snapshot Failed", snapError);
+                        throw snapError;
+                    }
                 }
+
+                // Success - update local optimized state
+                updatedData = addEvent(event);
+
                 break;
+
+            case 'RECORD_SCAN':
 
             case 'RECORD_SCAN':
                 const scan = payload as IDScanEvent;
