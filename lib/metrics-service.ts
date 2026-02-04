@@ -49,7 +49,9 @@ export const getTrafficTotals = async (scope: Scope, window = getTodayWindow()):
             throw new Error(`Traffic API Error: ${res.statusText}`);
         }
 
-        return await res.json();
+        const data = await res.json();
+        console.log(`[Metrics] Traffic Totals (${scope.area_id ? 'Area' : (scope.venue_id ? 'Venue' : 'Biz')}):`, data);
+        return data;
     } catch (e) {
         console.error("Metrics Service Error:", e);
         // Fail Safe w/ Zeros and log

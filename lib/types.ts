@@ -122,6 +122,7 @@ export type Clicr = {
         label_b: string; // Defaults to "FEMALE"
     };
     command?: string; // Hardware mapping/pairing code
+    direction_mode?: 'in_only' | 'out_only' | 'bidirectional';
 };
 
 export type DeviceType = 'COUNTER' | 'SCANNER' | 'COMBO';
@@ -140,6 +141,7 @@ export type Device = {
     firmware_version?: string;
     created_at: string;
     updated_at: string;
+    direction_mode?: 'in_only' | 'out_only' | 'bidirectional';
 };
 
 export type CapacityOverride = {

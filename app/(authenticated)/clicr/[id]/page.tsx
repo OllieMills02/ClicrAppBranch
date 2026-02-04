@@ -34,7 +34,10 @@ export default function ClicrCounterPage() {
     const { id } = useParams();
     const router = useRouter();
     const { clicrs, areas, events, venues, recordEvent, recordScan, resetCounts, isLoading, patrons, patronBans, updateClicr, debug, currentUser } = useApp();
-    const clicr = (clicrs || []).find((c) => c.id === id);
+    const rawClicr = (clicrs || []).find((c) => c.id === id);
+    const lastClicrRef = useRef<any>(null);
+    if (rawClicr) lastClicrRef.current = rawClicr;
+    const clicr = rawClicr || lastClicrRef.current;
     const [showCameraScanner, setShowCameraScanner] = useState(false);
 
     // Flashlight State (Moved to top to avoid Hook Rule violation)
@@ -81,20 +84,28 @@ export default function ClicrCounterPage() {
 
     // Keep event-based stats for "Session" view if needed, but rely on snapshots for enforcement
     const venueEvents = (events || []).filter(e => e.venue_id === venueId);
-    // Traffic Stats (Source: Server Aggregated via Service)
+    /**
+     * TRAFFIC STATS (IN / OUT)
+     * - Source: occupancy_events (via RPC)
+     * - Scope: Filtered by Area if device is assigned, else Venue.
+     */
     const [trafficStats, setTrafficStats] = useState({ total_in: 0, total_out: 0 });
 
     useEffect(() => {
         if (!venueId || !venue?.business_id) return;
         const fetchTraffic = async () => {
+            const areaId = clicr?.area_id;
+            console.log("Fetching traffic for scope:", { venueId, areaId });
+
             const stats = await getTrafficTotals({
                 business_id: venue.business_id,
-                venue_id: venueId
+                venue_id: venueId,
+                area_id: areaId
             }, getTodayWindow());
             setTrafficStats(stats);
         };
         fetchTraffic();
-    }, [venueId, venue?.business_id, events]); // Re-fetch on events
+    }, [venueId, venue?.business_id, clicr?.area_id, events]);
 
     const globalIn = trafficStats.total_in;
     const globalOut = trafficStats.total_out;
@@ -680,61 +691,83 @@ export default function ClicrCounterPage() {
 
                     {/* 2. Control Buttons (Bottom Part) - Flex Grow slightly but kept constrained */}
                     <div className="flex gap-4 shrink-0 px-4 pb-2 h-[20vh] min-h-[140px] max-h-[200px]">
-                        {soloMode ? (
-                            // SOLO MODE
-                            <div className="flex-1 flex flex-col gap-2 h-full">
-                                <TapButton
-                                    type="plus"
-                                    label={customLabels.label_a || 'COUNT'}
-                                    color="blue"
-                                    onClick={() => handleGenderTap('M', 1)}
-                                    className="flex-1 rounded-[1.5rem]"
-                                />
-                                <TapButton
-                                    type="minus"
-                                    color="blue"
-                                    onClick={() => handleGenderTap('M', -1)}
-                                    className="h-[50px] rounded-[1.5rem] shrink-0"
-                                />
-                            </div>
-                        ) : (
-                            // DUAL MODE
-                            <>
-                                {/* Button A */}
-                                <div className="flex-1 flex flex-col gap-2 h-full">
-                                    <TapButton
-                                        type="plus"
-                                        label={customLabels.label_a}
-                                        color="blue"
-                                        onClick={() => handleGenderTap('M', 1)}
-                                        className="flex-1 rounded-[1.5rem]"
-                                    />
-                                    <TapButton
-                                        type="minus"
-                                        color="blue"
-                                        onClick={() => handleGenderTap('M', -1)}
-                                        className="h-[50px] rounded-[1.5rem] shrink-0"
-                                    />
-                                </div>
+                        {(() => {
+                            const direction = clicr.direction_mode || 'bidirectional';
+                            const canIn = direction !== 'out_only';
+                            const canOut = direction !== 'in_only';
 
-                                {/* Button B */}
-                                <div className="flex-1 flex flex-col gap-2 h-full">
-                                    <TapButton
-                                        type="plus"
-                                        label={customLabels.label_b}
-                                        color="pink"
-                                        onClick={() => handleGenderTap('F', 1)}
-                                        className="flex-1 rounded-[1.5rem]"
-                                    />
-                                    <TapButton
-                                        type="minus"
-                                        color="pink"
-                                        onClick={() => handleGenderTap('F', -1)}
-                                        className="h-[50px] rounded-[1.5rem] shrink-0"
-                                    />
-                                </div>
-                            </>
-                        )}
+                            if (soloMode) {
+                                // SOLO MODE
+                                return (
+                                    <div className="flex-1 flex flex-col gap-2 h-full">
+                                        {canIn && (
+                                            <TapButton
+                                                type="plus"
+                                                label={customLabels.label_a || 'COUNT'}
+                                                color="blue"
+                                                onClick={() => handleGenderTap('M', 1)}
+                                                className={cn("rounded-[1.5rem]", canOut ? "flex-1" : "h-full")}
+                                            />
+                                        )}
+                                        {canOut && (
+                                            <TapButton
+                                                type="minus"
+                                                color="blue"
+                                                onClick={() => handleGenderTap('M', -1)}
+                                                className={cn("rounded-[1.5rem] shrink-0", canIn ? "h-[50px]" : "h-full flex-1")}
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            } else {
+                                // DUAL MODE
+                                return (
+                                    <>
+                                        {/* Button A */}
+                                        <div className="flex-1 flex flex-col gap-2 h-full">
+                                            {canIn && (
+                                                <TapButton
+                                                    type="plus"
+                                                    label={customLabels.label_a}
+                                                    color="blue"
+                                                    onClick={() => handleGenderTap('M', 1)}
+                                                    className={cn("rounded-[1.5rem]", canOut ? "flex-1" : "h-full")}
+                                                />
+                                            )}
+                                            {canOut && (
+                                                <TapButton
+                                                    type="minus"
+                                                    color="blue"
+                                                    onClick={() => handleGenderTap('M', -1)}
+                                                    className={cn("rounded-[1.5rem] shrink-0", canIn ? "h-[50px]" : "h-full flex-1")}
+                                                />
+                                            )}
+                                        </div>
+
+                                        {/* Button B */}
+                                        <div className="flex-1 flex flex-col gap-2 h-full">
+                                            {canIn && (
+                                                <TapButton
+                                                    type="plus"
+                                                    label={customLabels.label_b}
+                                                    color="pink"
+                                                    onClick={() => handleGenderTap('F', 1)}
+                                                    className={cn("rounded-[1.5rem]", canOut ? "flex-1" : "h-full")}
+                                                />
+                                            )}
+                                            {canOut && (
+                                                <TapButton
+                                                    type="minus"
+                                                    color="pink"
+                                                    onClick={() => handleGenderTap('F', -1)}
+                                                    className={cn("rounded-[1.5rem] shrink-0", canIn ? "h-[50px]" : "h-full flex-1")}
+                                                />
+                                            )}
+                                        </div>
+                                    </>
+                                );
+                            }
+                        })()}
                     </div>
 
                     {/* Reset Button */}
