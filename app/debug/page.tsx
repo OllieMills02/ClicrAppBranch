@@ -63,7 +63,7 @@ export default async function DebugPage() {
                     {memberError ? (
                         <div className="bg-red-50 text-red-600 p-4 rounded border border-red-100">
                             <strong>Query Error:</strong> {memberError.message}
-                            <p className="mt-2 text-xs">If code is "42P01" (undefined table), you must run the migration 09_fix_auth_architecture.sql</p>
+                            <p className="mt-2 text-xs">If code is &quot;42P01&quot; (undefined table), you must run the migration 09_fix_auth_architecture.sql</p>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -74,8 +74,8 @@ export default async function DebugPage() {
                                     <div><strong>Role:</strong> {m.role}</div>
                                     <div><strong>Default:</strong> {m.is_default ? 'YES' : 'NO'}</div>
                                     <div className="mt-2 text-xs text-slate-500">
-                                        Linked Business: {m.businesses ? (m.businesses as any).name : 'NULL'}
-                                        (Onboarded At: {(m.businesses as any)?.onboarding_completed_at || 'NULL'})
+                                        Linked Business: {m.businesses ? (m.businesses as { name: string }).name : 'NULL'}
+                                        (Onboarded At: {(m.businesses as { onboarding_completed_at: string } | null)?.onboarding_completed_at || 'NULL'})
                                     </div>
                                 </div>
                             ))}

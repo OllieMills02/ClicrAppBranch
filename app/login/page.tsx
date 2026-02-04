@@ -1,5 +1,5 @@
 
-import { login, signup } from './actions'
+import { login } from './actions'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 
@@ -82,7 +82,7 @@ export default async function LoginPage({ searchParams }: Props) {
 
                     <div className="text-center mt-6">
                         <p className="text-slate-500 text-sm">
-                            Don't have an account?{' '}
+                            Don&apos;t have an account?{' '}
                             <Link href="/signup" className="text-white font-bold hover:underline">
                                 Create one
                             </Link>

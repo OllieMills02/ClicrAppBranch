@@ -23,12 +23,12 @@ async function hydrateData(data: DBData): Promise<DBData> {
         ]);
 
         if (sbBusinesses) {
-            data.business = sbBusinesses[0] as any; // Single tenant mode for now, or use first found
+            data.business = sbBusinesses[0] as unknown as any; // Temporary bypass for mismatched schema logic
         }
 
         if (sbVenues) {
             // Replace local venues with Supabase venues
-            data.venues = sbVenues.map((v: any) => ({
+            data.venues = sbVenues.map((v) => ({
                 id: v.id,
                 business_id: v.business_id,
                 name: v.name,
@@ -48,7 +48,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
         }
 
         if (sbAreas) {
-            data.areas = sbAreas.map((a: any) => ({
+            data.areas = sbAreas.map((a) => ({
                 id: a.id,
                 venue_id: a.venue_id,
                 name: a.name,
@@ -66,7 +66,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
 
         // Sync Users & Permissions
         if (sbProfiles) {
-            sbProfiles.forEach((p: any) => {
+            sbProfiles.forEach((p) => {
                 const existing = data.users.find(u => u.id === p.id);
                 const businessVenues = data.venues.filter(v => v.business_id === p.business_id).map(v => v.id);
                 // Users in a business get access to all its venues for now (Owner/Manager model)
@@ -96,7 +96,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
 
         if (!snapError && snapshots) {
             // SELF-HEALING: Identify areas missing snapshots and create them
-            const missingSnapshotAreas = data.areas.filter(a => !snapshots.find((s: any) => s.area_id === a.id));
+            const missingSnapshotAreas = data.areas.filter(a => !snapshots.find((s) => s.area_id === a.id));
 
             if (missingSnapshotAreas.length > 0) {
                 console.warn(`[Hydration] Found ${missingSnapshotAreas.length} areas missing snapshots. Creating...`);
@@ -122,7 +122,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
 
             // Map snapshots to areas
             data.areas = data.areas.map(a => {
-                const snap = snapshots.find((s: any) => s.area_id === a.id);
+                const snap = snapshots.find((s) => s.area_id === a.id);
                 // If we just created it, it might not be in 'snapshots' array yet unless we refetch.
                 // But we can safely default to 0 here IF we know we just created it.
                 // However, better robustness is to use the snap if found, else 0 (since we know we tried to create it).
@@ -149,7 +149,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
         if (occError) console.error("Supabase Occupancy Fetch Error:", occError);
 
         if (!occError && occEvents) {
-            data.events = occEvents.map((e: any) => ({
+            data.events = occEvents.map((e) => ({
                 id: e.id,
                 venue_id: e.venue_id,
                 area_id: e.area_id || '',
@@ -158,8 +158,8 @@ async function hydrateData(data: DBData): Promise<DBData> {
                 business_id: e.business_id,
                 timestamp: new Date(e.timestamp).getTime(),
                 delta: e.delta,
-                flow_type: e.flow_type as any,
-                event_type: e.event_type as any,
+                flow_type: e.flow_type,
+                event_type: e.event_type,
             }));
 
             // RE-CALCULATE Clicr Session Counts from recent events (or all events if we fetched more)
@@ -176,7 +176,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
             .limit(100);
 
         if (!scanError && scans) {
-            data.scanEvents = scans.map((s: any) => ({
+            data.scanEvents = scans.map((s) => ({
                 ...s,
                 timestamp: new Date(s.timestamp).getTime()
             })) as IDScanEvent[];
@@ -191,7 +191,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
         if (!devError && devices) {
             // Update local Clicrs with persisted names/configs
             // Also merge new devices from DB if they don't exist locally
-            devices.forEach((d: any) => {
+            devices.forEach((d) => {
                 const exists = data.clicrs.find(c => c.id === d.id);
                 if (!exists && d.device_type === 'COUNTER_ONLY') {
                     data.clicrs.push({
@@ -210,7 +210,7 @@ async function hydrateData(data: DBData): Promise<DBData> {
             });
 
             data.clicrs = data.clicrs.map((c: Clicr) => {
-                const match = devices.find((d: any) => d.id === c.id);
+                const match = devices.find((d) => d.id === c.id);
                 if (match) {
                     return {
                         ...c,
@@ -365,7 +365,7 @@ export async function POST(request: Request) {
                         p_event_type: event.event_type,
                         p_session_id: event.clicr_id
                     };
-                    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('process_occupancy_event', rpcParams);
+                    const { error: rpcError } = await supabaseAdmin.rpc('process_occupancy_event', rpcParams);
 
                     if (rpcError) {
                         console.error("RPC Error Details:", JSON.stringify(rpcError, null, 2));
@@ -376,9 +376,9 @@ export async function POST(request: Request) {
                     // Success - update local optimized state
                     updatedData = addEvent(event);
 
-                } catch (e: any) {
+                } catch (e) {
                     console.error("Supabase Atomic Update Failed Exception", e);
-                    return NextResponse.json({ error: `Count Failed: ${e.message || JSON.stringify(e)}` }, { status: 500 });
+                    return NextResponse.json({ error: `Count Failed: ${(e as Error).message}` }, { status: 500 });
                 }
                 break;
 
@@ -417,7 +417,7 @@ export async function POST(request: Request) {
 
                 try {
                     // Correct Logical Reset: Don't delete history, just zero out current state.
-                    const updateQuery: any = { current_occupancy: 0, updated_at: new Date().toISOString() };
+                    const updateQuery = { current_occupancy: 0, updated_at: new Date().toISOString() };
 
                     if (resetAreaId) {
                         // Reset Specific Area
@@ -459,9 +459,9 @@ export async function POST(request: Request) {
                     writeDB(dbData);
                     updatedData = dbData;
 
-                } catch (e: any) {
+                } catch (e) {
                     console.error("Reset Failed", e);
-                    return NextResponse.json({ error: e.message }, { status: 500 });
+                    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
                 }
                 break;
 
@@ -521,9 +521,9 @@ export async function POST(request: Request) {
                         console.error("ADD_CLICR persistence failed", error);
                         return NextResponse.json({ error: `Database Insert Failed: ${error.message} (${error.code})` }, { status: 500 });
                     }
-                } catch (e: any) {
+                } catch (e) {
                     console.error("ADD_CLICR persistence exception", e);
-                    return NextResponse.json({ error: 'Server Error: ' + e.message }, { status: 500 });
+                    return NextResponse.json({ error: 'Server Error: ' + (e as Error).message }, { status: 500 });
                 }
 
                 updatedData = addClicr(newClicr);
@@ -605,9 +605,9 @@ export async function POST(request: Request) {
                     updatedData.clicrs = updatedData.clicrs.filter(c => c.id !== delPayload.id);
                     writeDB(updatedData);
 
-                } catch (e: any) {
+                } catch (e) {
                     console.error("[API] DELETE_CLICR Exception", e);
-                    return NextResponse.json({ error: 'Server Exception: ' + e.message }, { status: 500 });
+                    return NextResponse.json({ error: 'Server Exception: ' + (e as Error).message }, { status: 500 });
                 }
                 break;
 
@@ -684,8 +684,8 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json(updatedData);
-    } catch (error: any) {
+    } catch (error) {
         console.error("API Error", error);
-        return NextResponse.json({ error: `Internal Server Error: ${error.message}` }, { status: 500 });
+        return NextResponse.json({ error: `Internal Server Error: ${(error as Error).message}` }, { status: 500 });
     }
 }

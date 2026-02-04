@@ -16,7 +16,7 @@ function OnboardingForm() {
                     <Rocket className="w-8 h-8" />
                 </div>
                 <h1 className="text-3xl font-bold tracking-tight mb-3">Setup Your Organization</h1>
-                <p className="text-slate-400">Welcome to CLICR. Let's get your first workspace ready in seconds.</p>
+                <p className="text-slate-400">Welcome to CLICR. Let&apos;s get your first workspace ready in seconds.</p>
             </div>
 
             {error && (

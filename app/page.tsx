@@ -73,7 +73,7 @@ export default function LandingPage() {
   );
 }
 
-function Feature({ icon, title, desc }: { icon: any, title: string, desc: string }) {
+function Feature({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) {
   return (
     <div className="space-y-4">
       <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">

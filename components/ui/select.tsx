@@ -10,7 +10,7 @@ const SelectContext = React.createContext<{
     onValueChange?: (value: string) => void;
 }>({});
 
-export const Select = ({ children, value, onValueChange, defaultValue }: any) => {
+export const Select = ({ children, value, onValueChange, defaultValue }: React.PropsWithChildren<{ value?: string, onValueChange?: (val: string) => void, defaultValue?: string }>) => {
     const [val, setVal] = React.useState(value || defaultValue || "");
     const handleValueChange = (newValue: string) => {
         setVal(newValue);
@@ -24,7 +24,7 @@ export const Select = ({ children, value, onValueChange, defaultValue }: any) =>
     );
 };
 
-export const SelectTrigger = ({ children, className }: any) => {
+export const SelectTrigger = ({ children, className }: React.PropsWithChildren<{ className?: string }>) => {
     return (
         <button type="button" className={cn("flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", className)}>
             {children}
@@ -32,12 +32,12 @@ export const SelectTrigger = ({ children, className }: any) => {
     )
 };
 
-export const SelectValue = ({ placeholder }: any) => {
+export const SelectValue = ({ placeholder }: { placeholder?: string }) => {
     const { value } = React.useContext(SelectContext);
     return <span>{value || placeholder}</span>;
 }
 
-export const SelectContent = ({ children }: any) => {
+export const SelectContent = ({ children }: React.PropsWithChildren<{}>) => {
     // Hidden in this simplified mock implementation or just rendered static
     // For a real functional prototype without Radix, we'll just render it "open" purely for the DOM or rely on the user interacting with a real native select if simpler.
     // However, since I used the Component API in the page, I'll just render the children in a way that doesn't break.
@@ -53,7 +53,7 @@ export const SelectContent = ({ children }: any) => {
 // If I really want it to work for the demo without `npm install @radix-ui/react-select`, I should probably replace the usage in the page with a native <select> temporarily.
 // But valid file existence is Step 1.
 
-export const SelectItem = ({ value, children }: any) => {
+export const SelectItem = ({ value, children }: React.PropsWithChildren<{ value: string }>) => {
     const { onValueChange } = React.useContext(SelectContext);
     return (
         <div

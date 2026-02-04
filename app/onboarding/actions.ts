@@ -101,15 +101,15 @@ export async function completeOnboarding(formData: FormData) {
         // 8. Log Success
         console.log(`[Onboarding] Success for User ${user.id} -> Business ${business.id}`);
 
-    } catch (err: any) {
+    } catch (err) {
         console.error("[Onboarding] Error:", err);
         // Log to DB if possible (best effort)
         await supabaseAdmin.from('app_errors').insert({
             user_id: user.id,
-            error_message: err.message,
+            error_message: (err as Error).message,
             context: 'completeOnboarding'
         });
-        return redirect(`/onboarding?error=${encodeURIComponent(err.message)}`);
+        return redirect(`/onboarding?error=${encodeURIComponent((err as Error).message)}`);
     }
 
     revalidatePath('/', 'layout')

@@ -10,7 +10,7 @@ type Props = {
 export default async function SignupPage({ searchParams }: Props) {
     const params = await searchParams;
     const error = params.error as string;
-    const message = params.message as string;
+
     const returnTo = 'https://clicr.co';
 
     return (

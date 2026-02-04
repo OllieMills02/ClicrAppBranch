@@ -43,7 +43,7 @@ export async function submitScanAction(
     // 1. Construct the object for scan_events (Legacy/Quick Table)
     const scanEvent = {
         venue_id: venueId,
-        scan_result: finalStatus as any, // Cast to match type
+        scan_result: finalStatus, // Cast to match type
         age: rawDetails.age || 0,
         age_band: getAgeBand(rawDetails.age || 0),
         sex: rawDetails.sex || 'U',
@@ -140,7 +140,7 @@ export async function getRecentScansAction(venueId?: string): Promise<IDScanEven
         return [];
     }
 
-    return data.map((d: any) => ({
+    return data.map((d) => ({
         ...d,
         timestamp: new Date(d.timestamp).getTime()
     }));

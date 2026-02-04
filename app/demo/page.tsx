@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Users, ShieldCheck, Zap, Smartphone, CheckCircle, XCircle, AlertTriangle, FileSpreadsheet, FileText, Download, Calendar, ArrowRight, RotateCcw, Building2, MapPin } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Zap, Smartphone, CheckCircle, XCircle, FileSpreadsheet, FileText, ArrowRight, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -78,16 +78,16 @@ export default function InteractiveDemoPage() {
     };
 
     // -- Scanner State --
-    const [scanResult, setScanResult] = useState<any>(null);
+    const [scanResult, setScanResult] = useState<{ type: string; reason?: string; data: any } | null>(null);
     const [isScanning, setIsScanning] = useState(false);
     const [bannedList, setBannedList] = useState<string[]>(['Alex Trouble']);
 
     // -- Banning Interaction State --
     const [showBanModal, setShowBanModal] = useState(false);
-    const [tempBanTarget, setTempBanTarget] = useState<any>(null);
+
 
     // -- Reporting State --
-    const [compareMode, setCompareMode] = useState(false);
+
 
     // -- Simulation Effects --
     useEffect(() => {
@@ -192,7 +192,7 @@ export default function InteractiveDemoPage() {
                                     </div>
                                     <h2 className="text-4xl font-bold">Real-time Occupancy</h2>
                                     <p className="text-lg text-slate-400">
-                                        Track capacity across multiple areas. When door staff click '+' on their device, your dashboard updates instantly.
+                                        Track capacity across multiple areas. When door staff click &apos;+&apos; on their device, your dashboard updates instantly.
                                     </p>
                                     <div className="p-6 bg-slate-900 border border-white/10 rounded-2xl space-y-4">
                                         <div className="flex justify-between items-center text-sm text-slate-400">
@@ -269,7 +269,7 @@ export default function InteractiveDemoPage() {
                                                 className="p-3 bg-green-900/20 border border-green-500/30 hover:bg-green-900/40 rounded-lg text-left transition-all"
                                             >
                                                 <div className="font-bold text-green-400">Valid 21+</div>
-                                                <div className="text-xs text-slate-400">Driver's License</div>
+                                                <div className="text-xs text-slate-400">Driver&apos;s License</div>
                                             </button>
                                             <button
                                                 onClick={() => simulateScan('underage')}
@@ -318,7 +318,7 @@ export default function InteractiveDemoPage() {
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-2">
                                         <div className="p-2 bg-red-500/20 rounded-lg"><ShieldCheck className="w-5 h-5 text-red-400" /></div>
-                                        <h2 className="text-4xl font-bold">86'ing Made Simple</h2>
+                                        <h2 className="text-4xl font-bold">86&apos;ing Made Simple</h2>
                                     </div>
                                     <p className="text-lg text-slate-400">
                                         Ban problem guests instantly. The ban syncs to all your devices and venues immediately.
@@ -327,7 +327,7 @@ export default function InteractiveDemoPage() {
                                     <div className="p-6 bg-slate-900 border border-white/10 rounded-2xl space-y-4">
                                         <p className="font-bold text-white">Try it out:</p>
                                         <ol className="list-decimal list-inside space-y-2 text-slate-400 text-sm">
-                                            <li>Scan "Troublemaker" below</li>
+                                            <li>Scan &quot;Troublemaker&quot; below</li>
                                             <li>Click the <span className="text-red-400 font-bold">BAN</span> button on the result screen</li>
                                             <li>Select a reason and confirm</li>
                                             <li>Scan them again to see the block!</li>
@@ -530,7 +530,7 @@ export default function InteractiveDemoPage() {
                                 <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mb-4">
                                     <CheckCircle className="w-10 h-10 text-black" />
                                 </div>
-                                <h1 className="text-4xl md:text-6xl font-bold">You're ready to launch.</h1>
+                                <h1 className="text-4xl md:text-6xl font-bold">You&apos;re ready to launch.</h1>
                                 <p className="text-xl text-slate-400">
                                     CLICR replaces 5 different tools with one seamless operating system.
                                     Start your 14-day free pilot today found at clicr.co
@@ -599,7 +599,7 @@ export default function InteractiveDemoPage() {
 
 // --- Sub Components ---
 
-function ScannerPhoneFrame({ isScanning, result, onScanNext, onBanRequest, readonly }: any) {
+function ScannerPhoneFrame({ isScanning, result, onScanNext, onBanRequest, readonly }: { isScanning: boolean; result: any; onScanNext: () => void; onBanRequest: () => void; readonly?: boolean }) {
     return (
         <div className="bg-black border-[12px] border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden aspect-[9/19] relative flex flex-col">
             {/* Status Bar */}

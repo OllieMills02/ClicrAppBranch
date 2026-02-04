@@ -1,6 +1,6 @@
 
 import { createClient } from '@/utils/supabase/server';
-import { redirect } from 'next/navigation';
+
 
 export async function resolvePostAuthRoute(userId: string) {
     const supabase = await createClient();
@@ -17,11 +17,11 @@ export async function resolvePostAuthRoute(userId: string) {
     }
 
     // 2. Determine Target Business
-    let targetMembership = memberships.find(m => m.is_default) || memberships[0];
+    const targetMembership = memberships.find(m => m.is_default) || memberships[0];
 
     // 3. Check Onboarding Status of that Business
     // 'businesses' is an array or object depending on join, cast safely
-    const businessData = targetMembership.businesses as any;
+    const businessData = targetMembership.businesses as { onboarding_completed_at?: string } | null;
 
     if (!businessData?.onboarding_completed_at) {
         // Business exists but onboarding not marked done -> Resume Onboarding

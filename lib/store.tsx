@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { Business, Venue, Area, Clicr, CountEvent, User, IDScanEvent, BanRecord, BannedPerson, PatronBan, BanEnforcementEvent, BanAuditLog, Device, CapacityOverride, VenueAuditLog } from './types';
 import { createClient } from '@/utils/supabase/client';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 const INITIAL_USER: User = {
     id: 'usr_owner',
@@ -183,7 +184,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // REALTIME SUBSCRIPTION
     useEffect(() => {
         const supabase = createClient();
-        let channel: any = null;
+        let channel: RealtimeChannel | null = null;
 
         if (state.business?.id) {
             console.log(`[Realtime] Subscribing to business: ${state.business.id}`);
@@ -200,7 +201,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                     (payload) => {
                         console.log('[Realtime] Snapshot Update:', payload);
                         if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-                            const newSnap = payload.new as any;
+                            const newSnap = payload.new as { area_id: string, current_occupancy: number };
                             setState(prev => ({
                                 ...prev,
                                 areas: prev.areas.map(a => {
@@ -234,7 +235,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         };
     }, [state.business?.id]);
 
-    const authFetch = async (body: any) => {
+    const authFetch = async (body: Record<string, unknown>) => {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -557,11 +558,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
                 return { success: false, error: errData.error || res.statusText };
             }
-        } catch (e: any) {
+        } catch (e) {
             console.error("Delete Clicr Network Error", e);
-            setLastError(`Delete Failed: ${e.message}`);
+            setLastError(`Delete Failed: ${(e as Error).message}`);
             if (originalClicr) setState(prev => ({ ...prev, clicrs: [...prev.clicrs, originalClicr] }));
-            return { success: false, error: e.message };
+            return { success: false, error: (e as Error).message };
         }
     };
 
@@ -590,11 +591,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 setState(prev => ({ ...prev, clicrs: prev.clicrs.filter(c => c.id !== tempId) }));
                 return { success: false, error: errData.error || res.statusText };
             }
-        } catch (error: any) {
+        } catch (error) {
             console.error("Failed to add clicr network error", error);
             // Revert
             setState(prev => ({ ...prev, clicrs: prev.clicrs.filter(c => c.id !== tempId) }));
-            return { success: false, error: error.message };
+            return { success: false, error: (error as Error).message };
         }
     };
 
@@ -661,11 +662,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 if (originalDevice) setState(prev => ({ ...prev, devices: [...prev.devices, originalDevice] }));
                 return { success: false, error: errData.error };
             }
-        } catch (error: any) {
+        } catch (error) {
             console.error("Failed to delete device", error);
-            setLastError(`Delete Device Failed: ${error.message}`);
+            setLastError(`Delete Device Failed: ${(error as Error).message}`);
             if (originalDevice) setState(prev => ({ ...prev, devices: [...prev.devices, originalDevice] }));
-            return { success: false, error: error.message };
+            return { success: false, error: (error as Error).message };
         }
     };
 
