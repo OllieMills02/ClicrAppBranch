@@ -141,6 +141,64 @@ export default function RuntimeInspector() {
                     ))}
                 </div>
             </section>
+            {/* F. RLS / Connectivity Probes (NEW) */}
+            <section className="bg-slate-950 p-6 rounded-lg shadow-sm border border-slate-800 text-slate-300">
+                <h2 className="text-lg font-bold mb-4 text-white border-b border-slate-700 pb-2">F. Connectivity & RLS Probes</h2>
+                <div className="space-y-4">
+                    <ProbeButton label="Test Read Areas (Raw)" table="areas" />
+                    <ProbeButton label="Test Read Occupancy Events (Raw)" table="occupancy_events" limit={5} />
+                    <ProbeButton label="Test Read Snapshots (Raw)" table="occupancy_snapshots" />
+                    <ProbeButton label="Test Read Devices (Raw)" table="devices" />
+                </div>
+            </section>
+        </div>
+    );
+}
+
+function ProbeButton({ label, table, limit = 10 }: { label: string, table: string, limit?: number }) {
+    const [result, setResult] = useState<any>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const runProbe = async () => {
+        setLoading(true);
+        setError(null);
+        setResult(null);
+        try {
+            const sb = createClient();
+            const { data, error } = await sb.from(table).select('*').limit(limit);
+
+            if (error) {
+                setError(error.message || JSON.stringify(error));
+            } else {
+                setResult(data);
+            }
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="border border-slate-800 rounded p-4 bg-slate-900/50">
+            <div className="flex justify-between items-center mb-2">
+                <span className="font-mono text-xs text-slate-400">{label}</span>
+                <button onClick={runProbe} disabled={loading} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded">
+                    {loading ? 'Running...' : 'Run Probe'}
+                </button>
+            </div>
+            {error && <div className="text-red-400 text-xs font-mono bg-red-950/30 p-2 rounded">Error: {error}</div>}
+            {result && (
+                <div className="text-green-400 text-xs font-mono">
+                    <div>Found {result.length} rows.</div>
+                    {result.length > 0 && (
+                        <pre className="mt-2 max-h-40 overflow-auto bg-black p-2 rounded text-[10px] text-slate-300">
+                            {JSON.stringify(result, null, 2)}
+                        </pre>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

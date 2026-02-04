@@ -3,13 +3,12 @@
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
 import { Area, AreaType, CountingMode } from '@/lib/types';
+import { getAreaSummaries } from '@/lib/metrics-service';
+import { useMemo } from 'react';
 import {
     Plus,
     Edit2,
     Trash2,
-    Shield,
-    Smartphone,
-    MoreHorizontal,
     Move
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -17,7 +16,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function VenueAreas({ venueId }: { venueId: string }) {
     const { areas, addArea, updateArea } = useApp();
-    const venueAreas = areas.filter(a => a.venue_id === venueId);
+
+    // Use Standardized Metrics Selector
+    const venueAreas = useMemo(() => getAreaSummaries(areas, venueId), [areas, venueId]);
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingArea, setEditingArea] = useState<Partial<Area> | null>(null);
@@ -34,9 +35,12 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
         setIsEditModalOpen(true);
     };
 
-    const handleEdit = (area: Area) => {
-        setEditingArea({ ...area });
-        setIsEditModalOpen(true);
+    const handleEdit = (summary: any) => {
+        const fullArea = areas.find(a => a.id === summary.id);
+        if (fullArea) {
+            setEditingArea({ ...fullArea });
+            setIsEditModalOpen(true);
+        }
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -97,9 +101,9 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                         <div className="flex-1">
                             <div className="flex items-center gap-2">
                                 <h3 className="font-bold text-white">{area.name}</h3>
-                                {area.area_type && (
+                                {area.type && (
                                     <span className="text-[10px] px-2 py-0.5 bg-slate-800 rounded-full text-slate-400 uppercase tracking-wider">
-                                        {area.area_type}
+                                        {area.type}
                                     </span>
                                 )}
                             </div>
@@ -107,21 +111,21 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                                 <div className="flex justify-between text-xs font-mono">
                                     <span className={cn(
                                         "font-bold",
-                                        (area.current_occupancy || 0) >= (area.default_capacity || 0) && (area.default_capacity || 0) > 0 ? "text-red-400" : "text-slate-300"
+                                        area.percent_full >= 100 && area.capacity > 0 ? "text-red-400" : "text-slate-300"
                                     )}>
-                                        {area.current_occupancy || 0} / {area.default_capacity || '∞'}
+                                        {area.current_occupancy} / {area.capacity > 0 ? area.capacity : '∞'}
                                     </span>
                                     <span className="text-slate-500">
-                                        {(area.default_capacity || 0) > 0 ? `${Math.round(((area.current_occupancy || 0) / area.default_capacity!) * 100)}%` : '-'}
+                                        {area.capacity > 0 ? `${area.percent_full}%` : '-'}
                                     </span>
                                 </div>
-                                {(area.default_capacity || 0) > 0 && (
+                                {area.capacity > 0 && (
                                     <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                                         <div
                                             className={cn("h-full transition-all duration-500",
-                                                ((area.current_occupancy || 0) / area.default_capacity!) > 0.9 ? "bg-red-500" : "bg-primary"
+                                                area.percent_full > 90 ? "bg-red-500" : "bg-primary"
                                             )}
-                                            style={{ width: `${Math.min(((area.current_occupancy || 0) / area.default_capacity!) * 100, 100)}%` }}
+                                            style={{ width: `${Math.min(area.percent_full, 100)}%` }}
                                         />
                                     </div>
                                 )}
