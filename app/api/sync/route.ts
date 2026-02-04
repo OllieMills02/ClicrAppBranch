@@ -154,7 +154,8 @@ async function hydrateData(data: DBData, userId?: string): Promise<DBData> {
                 : supabaseAdmin.from('occupancy_snapshots').select('*'),
 
             effectiveBizId
-                ? supabaseAdmin.from('occupancy_events').select('area_id, delta').eq('business_id', effectiveBizId).gte('timestamp', startOfDay.toISOString())
+                // FIX: Use created_at instead of timestamp
+                ? supabaseAdmin.from('occupancy_events').select('area_id, delta').eq('business_id', effectiveBizId).gte('created_at', startOfDay.toISOString())
                 : Promise.resolve({ data: [] })
         ]);
 
@@ -197,6 +198,9 @@ async function hydrateData(data: DBData, userId?: string): Promise<DBData> {
             // Map snapshots and stats to areas
             data.areas = data.areas.map(a => {
                 const snap = snapshots.find((s) => s.area_id === a.id);
+                // Debug Log
+                if (!snap) console.log(`[Hydration] Area ${a.id} has no snapshot even after check.`);
+
                 let validCount = snap ? snap.current_occupancy : 0;
                 const stats = statsMap[a.id] || { in: 0, out: 0 };
 
@@ -214,7 +218,8 @@ async function hydrateData(data: DBData, userId?: string): Promise<DBData> {
         const { data: occEvents, error: occError } = await supabaseAdmin
             .from('occupancy_events')
             .select('*')
-            .order('timestamp', { ascending: false })
+            .eq('business_id', effectiveBizId || 'biz_001') // Filter by biz to be safe
+            .order('created_at', { ascending: false }) // FIX: created_at
             .limit(100);
 
         if (occError) console.error("Supabase Occupancy Fetch Error:", occError);
@@ -598,15 +603,17 @@ export async function POST(request: Request) {
                 let statsBizId = userId ? (await supabaseAdmin.from('profiles').select('business_id').eq('id', userId).single()).data?.business_id : null;
                 if (!statsBizId) statsBizId = 'biz_001'; // Fallback
 
-                const now = new Date();
-                const startOfDay = new Date(now);
-                startOfDay.setUTCHours(0, 0, 0, 0); // UTC Midnight
+                // Support Custom Window
+                const tsStart = safePayload.start_ts || new Date(new Date().setUTCHours(0, 0, 0, 0)).toISOString();
+                const tsEnd = safePayload.end_ts || new Date().toISOString();
 
                 let query = supabaseAdmin
                     .from('occupancy_events')
                     .select('area_id, delta')
                     .eq('business_id', statsBizId)
-                    .gte('timestamp', startOfDay.toISOString());
+                    .gte('created_at', tsStart); // FIX: Use created_at
+
+                if (safePayload.end_ts) query = query.lte('created_at', tsEnd);
 
                 if (safePayload.venue_id) query = query.eq('venue_id', safePayload.venue_id);
                 if (safePayload.area_id) query = query.eq('area_id', safePayload.area_id);

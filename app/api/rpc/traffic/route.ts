@@ -42,8 +42,8 @@ export async function POST(request: Request) {
             .from('occupancy_events')
             .select('delta, flow_type, source')
             .eq('business_id', business_id)
-            .gte('timestamp', start)
-            .lte('timestamp', end);
+            .gte('created_at', start)
+            .lte('created_at', end);
 
         if (venue_id) query = query.eq('venue_id', venue_id);
         if (area_id) query = query.eq('area_id', area_id);

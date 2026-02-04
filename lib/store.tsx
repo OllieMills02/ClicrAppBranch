@@ -620,7 +620,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const originalClicr = state.clicrs.find(c => c.id === clicrId);
         setState(prev => ({
             ...prev,
-            clicrs: prev.clicrs.filter(c => c.id !== clicrId)
+            clicrs: prev.clicrs.filter(c => c.id !== clicrId),
+            // Also remove from devices if present (unification)
+            devices: prev.devices.filter(d => d.id !== clicrId)
         }));
 
         try {

@@ -1,100 +1,146 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
+import { getTrafficTotals, getTodayWindow, getVenueSummaries } from '@/lib/metrics-service';
+import { createClient } from '@/utils/supabase/client';
 
 export default function RuntimeInspector() {
-    const { debug, business, venues, areas, clicrs, events, scanEvents, lastError } = useApp();
+    const { debug, business, venues, areas, clicrs, events, scanEvents, lastError, currentUser, devices } = useApp();
+    const [manualTotals, setManualTotals] = useState<any>(null);
+    const [manualAreaSummaries, setManualAreaSummaries] = useState<any>(null);
+
+    const testTrafficTotals = async () => {
+        if (!business) return;
+        const w = getTodayWindow();
+        const totals = await getTrafficTotals({ business_id: business.id }, w);
+        setManualTotals({ params: { business_id: business.id, window: w }, result: totals });
+    };
+
+    const testAreaSummaries = async () => {
+        if (!venues.length) return;
+        // Test first venue
+        const v = venues[0];
+        const sums = getVenueSummaries([v], areas);
+        setManualAreaSummaries(sums);
+    };
 
     return (
-        <div className="space-y-8">
-            {/* Realtime Status */}
-            <section className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-                <h2 className="text-lg font-bold mb-4 text-slate-700 border-b pb-2">3. Runtime Health (Client Source)</h2>
-                <div className="grid grid-cols-[120px_1fr] gap-2 font-mono text-sm">
-                    <div className="text-slate-500">Realtime:</div>
-                    <div>
-                        <span className={`inline-block px-2 py-1 rounded text-white text-xs font-bold ${debug.realtimeStatus === 'SUBSCRIBED' ? 'bg-green-500' :
-                            debug.realtimeStatus === 'CONNECTING' ? 'bg-amber-500' : 'bg-red-500'
-                            }`}>
-                            {debug.realtimeStatus}
-                        </span>
-                    </div>
-                    <div className="text-slate-500">Last Error:</div>
-                    <div className="text-red-500 font-bold">{lastError || 'None'}</div>
-                    <div className="text-slate-500">Active Biz:</div>
-                    <div>{business?.id || 'None'} ({business?.name})</div>
+        <div className="space-y-8 text-sm">
+
+            {/* A. Environment */}
+            <section className="bg-slate-950 p-6 rounded-lg shadow-sm border border-slate-800 text-slate-300">
+                <h2 className="text-lg font-bold mb-4 text-white border-b border-slate-700 pb-2">A. Environment</h2>
+                <div className="grid grid-cols-[140px_1fr] gap-2 font-mono text-xs">
+                    <div className="text-slate-500">Commit SHA:</div>
+                    <div>{process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'DEV_BUILD'}</div>
+                    <div className="text-slate-500">Supabase URL:</div>
+                    <div>{process.env.NEXT_PUBLIC_SUPABASE_URL}</div>
+                    <div className="text-slate-500">Timestamp:</div>
+                    <div>{new Date().toISOString()}</div>
                 </div>
             </section>
 
-            {/* Realtime Events Log */}
-            <section className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-                <h2 className="text-lg font-bold mb-4 text-slate-700 border-b pb-2">4. Recent Realtime Payloads (Last 5)</h2>
-                <div className="font-mono text-xs overflow-auto max-h-60 bg-slate-50 p-2 rounded">
-                    {debug.lastEvents.length === 0 ? <div className="text-slate-400 italic">No events received since load.</div> : (
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b">
-                                    <th className="pb-2">Time</th>
-                                    <th className="pb-2">Type</th>
-                                    <th className="pb-2">Table</th>
-                                    <th className="pb-2">Payload Summary</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {debug.lastEvents.map((e: any, i) => (
-                                    <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-100">
-                                        <td className="py-2 pr-2">{new Date(e.commit_timestamp).toLocaleTimeString() || '-'}</td>
-                                        <td className="py-2 pr-2 font-bold text-blue-600">{e.eventType}</td>
-                                        <td className="py-2 pr-2">{e.table}</td>
-                                        <td className="py-2">
-                                            {e.new ? (
-                                                <span title={JSON.stringify(e.new, null, 2)}>
-                                                    ID: {e.new.id?.substring(0, 8)}... |
-                                                    {e.table === 'occupancy_snapshots' ? ` Occ: ${e.new.current_occupancy}` : ''}
-                                                    {e.table === 'occupancy_events' ? ` Delta: ${e.new.delta}` : ''}
-                                                </span>
-                                            ) : '-'}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+            {/* B. Tenant Context */}
+            <section className="bg-slate-950 p-6 rounded-lg shadow-sm border border-slate-800 text-slate-300">
+                <h2 className="text-lg font-bold mb-4 text-white border-b border-slate-700 pb-2">B. Tenant Context</h2>
+                <div className="grid grid-cols-[140px_1fr] gap-2 font-mono text-xs">
+                    <div className="text-slate-500">User ID:</div>
+                    <div>{currentUser?.id || 'unauthenticated'}</div>
+                    <div className="text-slate-500">Role:</div>
+                    <div>{currentUser?.role || '-'}</div>
+                    <div className="text-slate-500">Business ID:</div>
+                    <div>{business?.id || 'None'} <span className="text-slate-500">({business?.name})</span></div>
+                    <div className="text-slate-500">Venue Count:</div>
+                    <div>{venues.length}</div>
+                </div>
+            </section>
+
+            {/* C. Areas Tab Diagnostics */}
+            <section className="bg-slate-950 p-6 rounded-lg shadow-sm border border-slate-800 text-slate-300">
+                <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-4">
+                    <h2 className="text-lg font-bold text-white">C. Areas Tab Diagnostics</h2>
+                    <button onClick={testAreaSummaries} className="bg-indigo-600 px-3 py-1 rounded text-white text-xs hover:bg-indigo-500">Test Calculation</button>
+                </div>
+
+                <div className="font-mono text-xs">
+                    <div className="mb-4">
+                        <div className="text-slate-500 mb-1">Loaded Areas ({areas.length}):</div>
+                        <div className="max-h-40 overflow-auto bg-slate-900 p-2 rounded">
+                            {areas.map(a => (
+                                <div key={a.id} className="flex justify-between border-b last:border-0 border-slate-800 py-1">
+                                    <span>{a.name} ({a.id.slice(0, 6)})</span>
+                                    <span className={a.current_occupancy !== undefined ? "text-emerald-400" : "text-red-500"}>
+                                        Occ: {a.current_occupancy ?? 'NULL'}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {manualAreaSummaries && (
+                        <div className="mt-4 border-t border-slate-700 pt-2">
+                            <div className="text-slate-500 mb-1">Manual Test Result:</div>
+                            <pre className="bg-slate-900 p-2 rounded overflow-auto">{JSON.stringify(manualAreaSummaries, null, 2)}</pre>
+                        </div>
                     )}
                 </div>
             </section>
 
-            {/* Local State Inspectors */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <section className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-                    <h2 className="text-lg font-bold mb-4 text-slate-700 border-b pb-2">Local Occupancy (Store)</h2>
-                    <div className="font-mono text-xs">
-                        {areas.map(a => (
-                            <div key={a.id} className="flex flex-col py-1 border-b last:border-0">
-                                <div className="flex justify-between">
-                                    <span>{a.name} ({a.id.substring(0, 6)}...):</span>
-                                    <span className="font-bold">{a.current_occupancy}</span>
-                                </div>
-                                <div className="flex justify-end gap-2 text-xs text-slate-400">
-                                    <span className="text-emerald-600">IN: {a.current_traffic_in ?? '-'}</span>
-                                    <span className="text-amber-600">OUT: {a.current_traffic_out ?? '-'}</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
+            {/* D. Traffic Totals Diagnostics */}
+            <section className="bg-slate-950 p-6 rounded-lg shadow-sm border border-slate-800 text-slate-300">
+                <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-4">
+                    <h2 className="text-lg font-bold text-white">D. Traffic Totals Diagnostics</h2>
+                    <button onClick={testTrafficTotals} className="bg-indigo-600 px-3 py-1 rounded text-white text-xs hover:bg-indigo-500">Test RPC</button>
+                </div>
 
-                <section className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-                    <h2 className="text-lg font-bold mb-4 text-slate-700 border-b pb-2">Recent Scans (Store)</h2>
-                    <div className="font-mono text-xs max-h-40 overflow-auto">
-                        {scanEvents.slice(0, 10).map(s => (
-                            <div key={s.id} className="py-1 border-b last:border-0">
-                                {new Date(s.timestamp).toLocaleTimeString()} - {s.scan_result} ({s.age}y - {s.sex})
-                            </div>
-                        ))}
+                <div className="font-mono text-xs space-y-4">
+                    <div>
+                        <div className="text-slate-500">Time Window (Local):</div>
+                        <div>Start: {getTodayWindow().start}</div>
+                        <div>End:   {getTodayWindow().end}</div>
                     </div>
-                </section>
-            </div>
+
+                    <div>
+                        <div className="text-slate-500 mb-1">Last 10 Events:</div>
+                        <div className="max-h-40 overflow-auto bg-slate-900 p-2 rounded">
+                            {events.slice(0, 10).map(e => (
+                                <div key={e.id} className="border-b last:border-0 border-slate-800 py-1 flex gap-2">
+                                    <span className="text-slate-500">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                                    <span className={e.delta > 0 ? "text-emerald-400" : "text-amber-400"}>{e.delta > 0 ? '+' : ''}{e.delta}</span>
+                                    <span className="text-slate-600">{e.venue_id?.slice(0, 4)}... / {e.area_id?.slice(0, 4)}...</span>
+                                    <span className="text-slate-400">{e.event_type}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {manualTotals && (
+                        <div className="mt-4 border-t border-slate-700 pt-2">
+                            <div className="text-slate-500 mb-1">RPC Result:</div>
+                            <pre className="bg-slate-900 p-2 rounded overflow-auto">{JSON.stringify(manualTotals, null, 2)}</pre>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* E. Devices / Delete Diagnostics */}
+            <section className="bg-slate-950 p-6 rounded-lg shadow-sm border border-slate-800 text-slate-300">
+                <h2 className="text-lg font-bold mb-4 text-white border-b border-slate-700 pb-2">E. Devices (Clicrs)</h2>
+                <div className="font-mono text-xs max-h-40 overflow-auto bg-slate-900 p-2 rounded">
+                    {devices.map(d => (
+                        <div key={d.id} className="flex justify-between border-b last:border-0 border-slate-800 py-1">
+                            <span>{d.device_name} ({d.id.slice(0, 6)})</span>
+                            <span>{d.status} / {d.direction_mode}</span>
+                        </div>
+                    ))}
+                    {clicrs.map(c => (
+                        <div key={c.id} className="flex justify-between border-b last:border-0 border-slate-800 py-1 opacity-70">
+                            <span>[LEGACY] {c.name} ({c.id.slice(0, 6)})</span>
+                            <span>Active: {String(c.active)}</span>
+                        </div>
+                    ))}
+                </div>
+            </section>
         </div>
     );
 }
