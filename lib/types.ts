@@ -74,6 +74,7 @@ export type Venue = {
     status: VenueStatus;
     default_capacity_total?: number | null;
     capacity_enforcement_mode: CapacityEnforcementMode;
+    last_reset_at?: string; // ISO
     created_at: string;
     updated_at: string;
 
@@ -87,9 +88,12 @@ export type CountingMode = 'MANUAL' | 'AUTO_FROM_SCANS' | 'BOTH';
 export type Area = {
     id: string;
     venue_id: string;
+    business_id?: string; // Added to match DB
     name: string;
     area_type: AreaType;
-    default_capacity?: number | null;
+    capacity_max?: number; // Match DB
+    default_capacity?: number | null; // UI legacy
+    last_reset_at?: string; // ISO
     counting_mode: CountingMode;
     is_active: boolean; // default true
     sort_order?: number;

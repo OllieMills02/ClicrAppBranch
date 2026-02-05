@@ -71,5 +71,45 @@ export const MUTATIONS = {
             throw error; // Re-throw to let UI handle it
         }
         return data;
+    },
+
+    recordScan: async (
+        ctx: { businessId: string; userId: string; venueId?: string; areaId?: string; deviceId?: string },
+        scanData: any,
+        autoAdd: boolean = false
+    ) => {
+        const sb = getSupabase();
+
+        // 1. Insert Scan
+        const { data: scan, error: scanError } = await sb
+            .from('id_scans')
+            .insert({
+                business_id: ctx.businessId,
+                venue_id: ctx.venueId,
+                area_id: ctx.areaId,
+                device_id: ctx.deviceId,
+                scan_result: scanData.scan_result,
+                age: scanData.age,
+                is_fake: scanData.is_fake,
+                first_name: scanData.first_name, // Should be hashed/encrypted in real prod
+                last_name: scanData.last_name,
+                dob: scanData.dob
+            })
+            .select()
+            .single();
+
+        if (scanError) throw scanError;
+
+        // 2. Auto Add Traffic (Optional)
+        if (autoAdd && ctx.venueId && ctx.areaId && scanData.scan_result === 'ACCEPTED') {
+            await MUTATIONS.applyDelta(
+                { businessId: ctx.businessId, venueId: ctx.venueId, areaId: ctx.areaId, userId: ctx.userId },
+                1,
+                'auto_scan',
+                ctx.deviceId
+            );
+        }
+
+        return scan;
     }
 };

@@ -21,7 +21,8 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
             .filter(a => a.venue_id === venueId)
             .map(area => {
                 const occ = area.current_occupancy || 0;
-                const cap = (area as any).capacity || area.default_capacity || 0;
+                // Prefer DB field 'capacity_max', fall back to legacy 'default_capacity'
+                const cap = area.capacity_max || area.default_capacity || 0;
                 return {
                     ...area,
                     capacity: cap,
@@ -38,7 +39,8 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
             venue_id: venueId,
             name: '',
             area_type: 'MAIN',
-            default_capacity: 0,
+            capacity_max: 0,
+            default_capacity: 0, // Legacy support
             counting_mode: 'BOTH',
             is_active: true
         });
@@ -48,7 +50,11 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
     const handleEdit = (summary: any) => {
         const fullArea = areas.find(a => a.id === summary.id);
         if (fullArea) {
-            setEditingArea({ ...fullArea });
+            setEditingArea({
+                ...fullArea,
+                // Ensure edit form sees the effective capacity
+                default_capacity: fullArea.capacity_max || fullArea.default_capacity || 0
+            });
             setIsEditModalOpen(true);
         }
     };
@@ -57,14 +63,18 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
         e.preventDefault();
         if (!editingArea || !editingArea.name) return;
 
+        // Sync legacy field for compatibility
+        const areaToSave = {
+            ...editingArea,
+            capacity_max: editingArea.default_capacity, // UI binds to default_capacity
+        } as Area;
+
         if (editingArea.id) {
-            // Update
-            await updateArea(editingArea as Area);
+            await updateArea(areaToSave);
         } else {
-            // Create
             const newArea: Area = {
-                ...editingArea,
-                id: Math.random().toString(36).substring(7),
+                ...areaToSave,
+                id: Math.random().toString(36).substring(7), // Temp ID until refresh
                 venue_id: venueId,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
@@ -111,9 +121,9 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                         <div className="flex-1">
                             <div className="flex items-center gap-2">
                                 <h3 className="font-bold text-white">{area.name}</h3>
-                                {area.type && (
+                                {area.area_type && (
                                     <span className="text-[10px] px-2 py-0.5 bg-slate-800 rounded-full text-slate-400 uppercase tracking-wider">
-                                        {area.type}
+                                        {area.area_type}
                                     </span>
                                 )}
                             </div>
