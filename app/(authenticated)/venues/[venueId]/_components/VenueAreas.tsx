@@ -1,10 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '@/lib/store';
 import { Area, AreaType, CountingMode } from '@/lib/types';
-import { getAreaSummaries } from '@/lib/metrics-service';
-import { useMemo } from 'react';
 import {
     Plus,
     Edit2,
@@ -18,7 +16,19 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
     const { areas, addArea, updateArea } = useApp();
 
     // Use Standardized Metrics Selector
-    const venueAreas = useMemo(() => getAreaSummaries(areas, venueId), [areas, venueId]);
+    const venueAreas = useMemo(() => {
+        return areas
+            .filter(a => a.venue_id === venueId)
+            .map(area => {
+                const occ = area.current_occupancy || 0;
+                const cap = (area as any).capacity || area.default_capacity || 0;
+                return {
+                    ...area,
+                    capacity: cap,
+                    percent_full: cap > 0 ? Math.round((occ / cap) * 100) : 0
+                };
+            });
+    }, [areas, venueId]);
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingArea, setEditingArea] = useState<Partial<Area> | null>(null);

@@ -5,7 +5,8 @@ import { useApp } from '@/lib/store';
 import { Building2, MapPin, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { getTrafficTotals, getTodayWindow } from '@/lib/metrics-service';
+import { METRICS } from '@/lib/core/metrics';
+import { getTodayWindow } from '@/lib/core/time';
 import { Venue, Area, CountEvent } from '@/lib/types';
 
 // Sub-component for individual venue stats
@@ -22,10 +23,7 @@ const VenueCard = ({ venue, areas, events }: { venue: Venue, areas: Area[], even
         const fetchStats = async () => {
             if (!venue.business_id) return;
             try {
-                const data = await getTrafficTotals({
-                    business_id: venue.business_id,
-                    venue_id: venue.id
-                }, getTodayWindow());
+                const data = await METRICS.getTotals(venue.business_id, { venueId: venue.id }, getTodayWindow());
                 setStats(data);
                 setLoading(false);
             } catch (e) {

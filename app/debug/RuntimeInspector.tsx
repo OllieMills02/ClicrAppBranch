@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/lib/store';
-import { getTrafficTotals, getTodayWindow } from '@/lib/metrics-service';
+import { METRICS } from '@/lib/core/metrics';
+import { getTodayWindow } from '@/lib/core/time';
 import { createClient } from '@/utils/supabase/client';
 
 export default function RuntimeInspector() {
@@ -46,22 +47,13 @@ export default function RuntimeInspector() {
     const loadTruthCardB = async () => {
         if (!business?.id) return;
         const w = getTodayWindow();
-        const params = {
-            p_business_id: business.id,
-            p_venue_id: null,
-            p_area_id: null,
-            p_start_ts: w.start,
-            p_end_ts: w.end
-        };
 
         try {
-            const sb = createClient();
-            const { data, error } = await sb.rpc('get_traffic_totals_v3', params);
-
+            const result = await METRICS.getTotals(business.id, {}, w);
             setTruthB({
-                params,
-                result: data ? data[0] : null,
-                error: error?.message
+                params: w,
+                result: result,
+                error: null
             });
         } catch (e) {
             setTruthB({ error: (e as Error).message });

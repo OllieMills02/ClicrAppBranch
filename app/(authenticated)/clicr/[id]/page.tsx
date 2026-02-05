@@ -11,7 +11,8 @@ import { parseAAMVA } from '@/lib/aamva';
 import { evaluateScan } from '@/lib/scan-service';
 import { Html5Qrcode } from 'html5-qrcode';
 import { getVenueCapacityRules } from '@/lib/capacity';
-import { getTrafficTotals, getTodayWindow } from '@/lib/metrics-service';
+import { METRICS } from '@/lib/core/metrics';
+import { getTodayWindow } from '@/lib/core/time';
 
 // Mock data generator for simulation
 const generateMockID = () => {
@@ -107,11 +108,7 @@ export default function ClicrCounterPage() {
             // console.log("Fetching traffic for scope:", { venueId, areaId });
 
             try {
-                const stats = await getTrafficTotals({
-                    business_id: venue.business_id,
-                    venue_id: venueId,
-                    area_id: areaId
-                }, getTodayWindow());
+                const stats = await METRICS.getTotals(venue.business_id, { venueId, areaId }, getTodayWindow());
                 setTrafficStats(stats);
             } catch (e) {
                 console.error("Traffic fetch failed", e);

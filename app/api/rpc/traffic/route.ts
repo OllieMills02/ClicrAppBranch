@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         const end = end_ts ? new Date(end_ts).toISOString() : new Date().toISOString();
 
         // 1. Try RPC Approach (Optimal)
-        const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_traffic_totals_v3', {
+        const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_traffic_totals', {
             p_business_id: business_id,
             p_venue_id: venue_id || null,
             p_area_id: area_id || null,
@@ -22,8 +22,12 @@ export async function POST(request: Request) {
             p_end_ts: end
         });
 
-        if (!rpcError && rpcData && rpcData.length > 0) {
-            // RPC returns array of 1 row usually
+        if (rpcError) {
+            console.error("RPC Error", rpcError);
+            throw new Error(rpcError.message);
+        }
+
+        if (rpcData && rpcData.length > 0) {
             const row = rpcData[0];
             return NextResponse.json({
                 total_in: Number(row.total_in || 0),
@@ -31,54 +35,16 @@ export async function POST(request: Request) {
                 net_delta: Number(row.net_delta || 0),
                 event_count: Number(row.event_count || 0),
                 period: { start, end },
-                source: 'rpc'
+                source: 'rpc_core'
             });
         }
 
-        // 2. Fallback: Aggregation in Node (Robustness)
-        console.warn("Traffic RPC failed or missing, falling back to local aggregation:", rpcError?.message);
-
-        console.log(`[Traffic Fallback] Querying business=${business_id} start=${start} end=${end}`);
-
-        let query = supabaseAdmin
-            .from('occupancy_events')
-            .select('delta, flow_type, source')
-            .eq('business_id', business_id)
-            .gte('created_at', start)
-            .lte('created_at', end);
-
-        if (venue_id) query = query.eq('venue_id', venue_id);
-        if (area_id) query = query.eq('area_id', area_id);
-
-        const { data: events, error } = await query;
-
-        console.log(`[Traffic Fallback] Found ${events?.length ?? 0} events. Error:`, error);
-
-        if (error) throw error;
-
-        let total_in = 0;
-        let total_out = 0;
-        let net_delta = 0;
-        const event_count = events?.length || 0;
-
-        events?.forEach((e: any) => {
-            if (e.source === 'reset') {
-                net_delta += e.delta;
-                return;
-            }
-            const d = e.delta;
-            net_delta += d;
-            if (d > 0) total_in += d;
-            else total_out += Math.abs(d);
-        });
-
         return NextResponse.json({
-            total_in,
-            total_out,
-            net_delta,
-            event_count,
-            period: { start, end },
-            source: 'fallback_node'
+            total_in: 0,
+            total_out: 0,
+            net_delta: 0,
+            event_count: 0,
+            source: 'rpc_core_empty'
         });
 
     } catch (e) {

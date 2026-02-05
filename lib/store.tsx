@@ -4,7 +4,9 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { Business, Venue, Area, Clicr, CountEvent, User, IDScanEvent, BanRecord, BannedPerson, PatronBan, BanEnforcementEvent, BanAuditLog, Device, CapacityOverride, VenueAuditLog } from './types';
 import { createClient } from '@/utils/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { getTrafficTotals, getTodayWindow, TrafficStats, rpcResetCounts, rpcAddOccupancy } from './metrics-service';
+import { METRICS, TrafficTotals } from './core/metrics';
+import { MUTATIONS } from './core/mutations';
+import { getTodayWindow } from './core/time';
 import { RealtimeManager } from './realtime-manager';
 
 interface PendingClick {
@@ -23,13 +25,11 @@ const INITIAL_USER: User = {
     assigned_clicr_ids: [],
 };
 
-const INITIAL_TRAFFIC: TrafficStats = {
+const INITIAL_TRAFFIC: TrafficTotals = {
     total_in: 0,
     total_out: 0,
     net_delta: 0,
-    event_count: 0,
-    period: getTodayWindow(),
-    source: 'init'
+    event_count: 0
 };
 
 export type AppState = {
@@ -47,7 +47,7 @@ export type AppState = {
     bans: BanRecord[];
 
     // Traffic Stats (Business Level Source of Truth)
-    traffic: TrafficStats;
+    traffic: TrafficTotals;
 
     // Patron Banning System
     patrons: BannedPerson[];
@@ -66,6 +66,9 @@ export type AppState = {
         lastSnapshots: unknown[];
     };
 };
+
+// ... (logErrorToUsage helper skipped to keep context small, wait I need to include it or skip it carefully) ...
+// Actually, I can just replace the imports and AppState definition area.
 
 // Helper for error logging
 const logErrorToUsage = async (userId: string | undefined, message: string, context: string, payload?: any) => {
@@ -155,6 +158,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
     });
 
+    // Helper to set error state
+    const setLastError = (msg: string | null) => setState(prev => ({ ...prev, lastError: msg }));
+
     const isResettingRef = useRef(false);
     const realtimeManager = useRef(new RealtimeManager());
 
@@ -183,16 +189,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
             try {
                 // Execute Atomic RPC (Explicit context)
-                const result = await rpcAddOccupancy(
-                    businessId,
-                    data.venue_id, // MUST be provided by caller
-                    data.area_id,
+                const result = await MUTATIONS.applyDelta(
+                    { businessId, venueId: data.venue_id, areaId: data.area_id, userId },
                     data.delta,
-                    userId
+                    'manual', // or click
+                    data.clicr_id
                 );
 
                 // Success
-                // console.log("RPC Success:", result); // Debug
                 setState(prev => ({
                     ...prev,
                     debug: {
@@ -234,12 +238,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (!businessId) return;
 
         // Fetch Global Business Stats (Metrics Service)
-        const globalStats = await getTrafficTotals({ business_id: businessId }, getTodayWindow());
-
-        setState(prev => ({
-            ...prev,
-            traffic: globalStats
-        }));
+        try {
+            const globalStats = await METRICS.getTotals(businessId, { venueId, areaId }, getTodayWindow());
+            setState(prev => ({
+                ...prev,
+                traffic: globalStats
+            }));
+        } catch (e) {
+            console.error("Traffic fetch failed", e);
+        }
     }, [state.business?.id]);
 
     const refreshState = useCallback(async () => {
@@ -458,7 +465,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }));
 
         try {
-            await rpcResetCounts(businessId, userId, scope, targetId);
+            await MUTATIONS.resetCounts({ businessId, userId }, scope, targetId, 'manual_reset');
 
             // Success
             setState(prev => ({
@@ -621,26 +628,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }));
 
         try {
-            const res = await authFetch({ action: 'DELETE_CLICR', payload: { id: clicrId } });
-            if (res.ok) {
-                const updatedDB = await res.json();
-                setState(prev => ({ ...prev, ...updatedDB }));
-                return { success: true };
-            } else {
-                const errData = await res.json().catch(() => ({ error: 'Unknown JSON parsing error' }));
-                console.error("Delete Clicr Failed API", errData);
-                setLastError(`Delete Failed: ${errData.error || res.statusText}`);
-                logErrorToUsage(state.currentUser.id, `Delete Clicr Failed: ${errData.error}`, 'deleteClicr', { clicrId });
-
-                // Revert
-                if (originalClicr) setState(prev => ({ ...prev, clicrs: [...prev.clicrs, originalClicr] }));
-
-                return { success: false, error: errData.error || res.statusText };
-            }
+            await MUTATIONS.deleteDevice({ businessId: state.business?.id || '', userId: state.currentUser.id }, clicrId);
+            // Refresh to sync
+            return { success: true };
         } catch (e) {
             console.error("Delete Clicr Network Error", e);
             setLastError(`Delete Failed: ${(e as Error).message}`);
-            logErrorToUsage(state.currentUser.id, `Delete Clicr Network Error: ${(e as Error).message}`, 'deleteClicr', { clicrId });
 
             if (originalClicr) setState(prev => ({ ...prev, clicrs: [...prev.clicrs, originalClicr] }));
             return { success: false, error: (e as Error).message };
@@ -731,18 +724,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setState(prev => ({ ...prev, devices: prev.devices.filter(d => d.id !== deviceId) }));
 
         try {
-            const res = await authFetch({ action: 'DELETE_DEVICE', payload: { id: deviceId } });
-            if (res.ok) {
-                const updatedDB = await res.json();
-                setState(prev => ({ ...prev, ...updatedDB }));
-                return { success: true };
-            } else {
-                const errData = await res.json().catch(() => ({}));
-                console.error("Delete Device Failed", errData);
-                setLastError(`Delete Device Failed: ${errData.error || res.statusText}`);
-                if (originalDevice) setState(prev => ({ ...prev, devices: [...prev.devices, originalDevice] }));
-                return { success: false, error: errData.error };
-            }
+            await MUTATIONS.deleteDevice({ businessId: state.business?.id || '', userId: state.currentUser.id }, deviceId);
+            return { success: true };
         } catch (error) {
             console.error("Failed to delete device", error);
             setLastError(`Delete Device Failed: ${(error as Error).message}`);
