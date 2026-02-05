@@ -26,6 +26,7 @@ export type AppState = {
     // Core Data
     bans: BanRecord[];
     patrons: BannedPerson[];
+    patronBans: PatronBan[];
 
     // Traffic Stats (Business Level Source of Truth)
     traffic: {
@@ -34,6 +35,9 @@ export type AppState = {
         net_delta: number;
         event_count: number;
     };
+
+    // Scoped Traffic Stats (For Clicr Screens)
+    areaTraffic: Record<string, { total_in: number; total_out: number }>;
 
     isLoading: boolean;
     lastError: string | null;
@@ -97,7 +101,9 @@ const INITIAL_STATE: AppState = {
     users: [],
     bans: [],
     patrons: [],
+    patronBans: [],
     traffic: { total_in: 0, total_out: 0, net_delta: 0, event_count: 0 },
+    areaTraffic: {},
     isLoading: true,
     lastError: null,
     debug: { realtimeStatus: 'CONNECTING', lastEvents: [], lastWrites: [], lastSnapshots: [] }
@@ -196,7 +202,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 devices: (devices || []) as any[],
                 clicrs: mappedClicrs,
                 events: (events || []) as any[],
-                traffic: totals // Full Sync of Totals
+                traffic: totals, // Full Sync of Totals
+                areaTraffic: prev.areaTraffic // Preserve scoped cache
             }));
 
         } catch (error) {
@@ -214,13 +221,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
 
     // --- 2. REALTIME SUBSCRIPTION ---
-    const debounceRef = useRef<NodeJS.Timeout | null>(null);
+    const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
 
-    const debouncedRefreshTotals = useCallback(() => {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-            refreshTrafficStats();
-        }, 600); // Wait 600ms idle before RPC
+    const debouncedRefreshTotals = useCallback((venueId?: string, areaId?: string) => {
+        const key = venueId && areaId ? `area:${state.business?.id}:${venueId}:${areaId}` : 'global';
+
+        if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
+
+        debounceTimers.current[key] = setTimeout(() => {
+            refreshTrafficStats(venueId, areaId);
+            delete debounceTimers.current[key];
+        }, 600);
     }, [state.business?.id]);
 
     useEffect(() => {
@@ -276,12 +287,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                                 net_delta: prev.traffic.net_delta + d,
                                 event_count: prev.traffic.event_count + 1
                             },
+                            // Update Area-Scoped Traffic
+                            areaTraffic: {
+                                ...prev.areaTraffic,
+                                [`area:${e.business_id}:${e.venue_id}:${e.area_id}`]: {
+                                    total_in: (prev.areaTraffic[`area:${e.business_id}:${e.venue_id}:${e.area_id}`]?.total_in || 0) + (d > 0 ? d : 0),
+                                    total_out: (prev.areaTraffic[`area:${e.business_id}:${e.venue_id}:${e.area_id}`]?.total_out || 0) + (d < 0 ? Math.abs(d) : 0),
+                                }
+                            },
                             debug: { ...prev.debug, lastEvents: [e, ...prev.debug.lastEvents].slice(0, 10) }
                         };
                     });
 
                     // Always reconcile eventually to be safe
+                    // Reconcile Global
                     debouncedRefreshTotals();
+                    // Reconcile Area Scope
+                    debouncedRefreshTotals(e.venue_id, e.area_id);
                 }
             });
         }
@@ -307,6 +329,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 total_in: d > 0 ? prev.traffic.total_in + d : prev.traffic.total_in,
                 total_out: d < 0 ? prev.traffic.total_out + Math.abs(d) : prev.traffic.total_out,
                 net_delta: prev.traffic.net_delta + d
+            },
+            areaTraffic: {
+                ...prev.areaTraffic,
+                [`area:${bizId}:${event.venue_id}:${event.area_id}`]: {
+                    total_in: (prev.areaTraffic[`area:${bizId}:${event.venue_id}:${event.area_id}`]?.total_in || 0) + (d > 0 ? d : 0),
+                    total_out: (prev.areaTraffic[`area:${bizId}:${event.venue_id}:${event.area_id}`]?.total_out || 0) + (d < 0 ? Math.abs(d) : 0),
+                }
             }
         }));
 
@@ -320,6 +349,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
             // Reconcile eventually
             debouncedRefreshTotals();
+            debouncedRefreshTotals(event.venue_id, event.area_id);
         } catch (e) {
             console.error("Tap failed", e);
             setLastError("Tap failed to save. Retrying...");
@@ -402,10 +432,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
 
     // Helper: Refresh Stats
+    // Helper: Refresh Stats
     const refreshTrafficStats = async (venueId?: string, areaId?: string) => {
         if (!state.business?.id) return;
         const stats = await METRICS.getTotals(state.business.id, { venueId, areaId });
-        setState(prev => ({ ...prev, traffic: stats }));
+
+        setState(prev => {
+            if (venueId && areaId) {
+                // Scope Update
+                return {
+                    ...prev,
+                    areaTraffic: {
+                        ...prev.areaTraffic,
+                        [`area:${state.business!.id}:${venueId}:${areaId}`]: stats
+                    }
+                };
+            } else {
+                // Global Update
+                return { ...prev, traffic: stats };
+            }
+        });
     };
 
     // --- 4. CRUD OPERATIONS ---

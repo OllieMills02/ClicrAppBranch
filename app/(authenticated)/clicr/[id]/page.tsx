@@ -98,27 +98,23 @@ export default function ClicrCounterPage() {
      * - Source: occupancy_events (via RPC)
      * - Scope: Filtered by Area if device is assigned, else Venue.
      */
-    const [trafficStats, setTrafficStats] = useState<{ total_in: number, total_out: number } | null>(null);
+    const { areaTraffic, refreshTrafficStats } = useApp();
+    const scopeKey = (venue?.business_id && venueId && clicr?.area_id)
+        ? `area:${venue.business_id}:${venueId}:${clicr.area_id}`
+        : null;
+
+    // Subscribe to store updates
+    const areaStats = scopeKey ? areaTraffic[scopeKey] : null;
 
     useEffect(() => {
-        if (!venueId || !venue?.business_id) return;
+        if (!venueId || !venue?.business_id || !clicr?.area_id) return;
 
-        const fetchTraffic = async () => {
-            const areaId = clicr?.area_id;
-            // console.log("Fetching traffic for scope:", { venueId, areaId });
+        // Initial Fetch -> Populates Store
+        refreshTrafficStats(venueId, clicr.area_id);
+    }, [venueId, venue?.business_id, clicr?.area_id]); // Run once per scope change
 
-            try {
-                const stats = await METRICS.getTotals(venue.business_id, { venueId, areaId }, getTodayWindow());
-                setTrafficStats(stats);
-            } catch (e) {
-                console.error("Traffic fetch failed", e);
-            }
-        };
-        fetchTraffic();
-    }, [venueId, venue?.business_id, clicr?.area_id, events]);
-
-    const globalIn = trafficStats?.total_in;
-    const globalOut = trafficStats?.total_out;
+    const globalIn = areaStats?.total_in;
+    const globalOut = areaStats?.total_out;
 
     // DEBUG PANEL STATE
     const [showDebug, setShowDebug] = useState(false);
