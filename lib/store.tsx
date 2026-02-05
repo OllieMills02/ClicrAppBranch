@@ -214,6 +214,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
 
     // --- 2. REALTIME SUBSCRIPTION ---
+    const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    const debouncedRefreshTotals = useCallback(() => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            refreshTrafficStats();
+        }, 600); // Wait 600ms idle before RPC
+    }, [state.business?.id]);
+
     useEffect(() => {
         const businessId = state.business?.id;
         if (businessId) {
@@ -238,18 +247,46 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 },
 
                 onEvent: (payload) => {
-                    refreshTrafficStats();
-                    const newEvent = payload.new;
-                    setState(prev => ({
-                        ...prev,
-                        events: [newEvent, ...prev.events].slice(0, 50),
-                        debug: { ...prev.debug, lastEvents: [newEvent, ...prev.debug.lastEvents].slice(0, 10) }
-                    }));
+                    // INSTANT LOCAL INCREMENT (For other devices)
+                    const e = payload.new;
+                    const d = e.delta;
+
+                    setState(prev => {
+                        // Avoid double counting if we just optimistically added it
+                        // Simple heuristic: if we have it in our recent events list (by ID), skip
+                        // But for now, we rely on optimistic updates to have pushed it to state already? 
+                        // Actually, optimistic updates in `recordEvent` don't add to `events` array immediately usually, or do they?
+                        // Let's check recordEvent... it just updates occupancy and traffic stats.
+                        // So if we receive our own event back, we might double count totals.
+                        // Ideally checking `e.user_id === state.currentUser.id` ignores it?
+                        // BUT `recordEvent` does optimistic traffic update.
+
+                        // Rule: If `e.user_id` matches current user, we ALREADY applied it in recordEvent.
+                        // So only apply if from SOMEONE ELSE.
+                        const isMine = e.user_id === prev.currentUser?.id;
+                        if (isMine) return prev;
+
+                        return {
+                            ...prev,
+                            // events: [e, ...prev.events].slice(0, 50), // We can add to log
+                            traffic: {
+                                ...prev.traffic,
+                                total_in: d > 0 ? prev.traffic.total_in + d : prev.traffic.total_in,
+                                total_out: d < 0 ? prev.traffic.total_out + Math.abs(d) : prev.traffic.total_out,
+                                net_delta: prev.traffic.net_delta + d,
+                                event_count: prev.traffic.event_count + 1
+                            },
+                            debug: { ...prev.debug, lastEvents: [e, ...prev.debug.lastEvents].slice(0, 10) }
+                        };
+                    });
+
+                    // Always reconcile eventually to be safe
+                    debouncedRefreshTotals();
                 }
             });
         }
         return () => realtimeManager.current.unsubscribe();
-    }, [state.business?.id]);
+    }, [state.business?.id, debouncedRefreshTotals]); // Added debouncedRefreshTotals dependency
 
 
     // --- 3. ACTIONS (MUTATIONS) ---
@@ -280,6 +317,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 'tap',
                 event.clicr_id
             );
+
+            // Reconcile eventually
+            debouncedRefreshTotals();
         } catch (e) {
             console.error("Tap failed", e);
             setLastError("Tap failed to save. Retrying...");
