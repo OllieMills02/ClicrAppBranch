@@ -138,7 +138,7 @@ export type Device = {
     venue_id?: string | null;
     area_id?: string | null;
     device_type: DeviceType;
-    device_name: string;
+    name: string; // Was device_name
     serial_number: string;
     status: DeviceStatus;
     last_seen_at?: string | null;

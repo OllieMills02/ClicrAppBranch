@@ -174,7 +174,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             const mappedClicrs: Clicr[] = (devices || []).map(d => ({
                 id: d.id,
                 area_id: d.area_id || '',
-                name: d.name || d.device_name || 'Device',
+                name: d.name || 'Device',
                 flow_mode: d.direction_mode === 'in_only' ? 'IN_ONLY' : d.direction_mode === 'out_only' ? 'OUT_ONLY' : 'BIDIRECTIONAL',
                 current_count: 0, // Not used for display, AREA count is used
                 active: true,
@@ -467,7 +467,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             venue_id: state.areas.find(a => a.id === clicr.area_id)?.venue_id,
             area_id: clicr.area_id,
             device_type: 'COUNTER' as const,
-            device_name: clicr.name,
+            name: clicr.name,
             direction_mode: (flowMap[clicr.flow_mode] || 'bidirectional') as 'in_only' | 'out_only' | 'bidirectional',
             status: 'ACTIVE' as const,
             created_at: new Date().toISOString()
