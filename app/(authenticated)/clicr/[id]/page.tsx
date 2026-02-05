@@ -11,6 +11,9 @@ import { parseAAMVA } from '@/lib/aamva';
 import { evaluateScan } from '@/lib/scan-service';
 import { Html5Qrcode } from 'html5-qrcode';
 import { getVenueCapacityRules } from '@/lib/capacity';
+import { tokens } from '@/lib/ui/tokens';
+import { MetricCard, ActionButton, OccupancyDisplay } from '@/lib/ui/components/ClicrComponents';
+import { ScannerResult, ScanStatus } from '@/lib/ui/components/ScannerResult';
 import { METRICS } from '@/lib/core/metrics';
 import { getTodayWindow } from '@/lib/core/time';
 
@@ -509,6 +512,16 @@ export default function ClicrCounterPage() {
         processScan(fakeParsed);
     };
 
+    const handleCameraScan = (decodedText: string) => {
+        try {
+            console.log("Camera Scan Success");
+            const parsed = parseAAMVA(decodedText);
+            processScan(parsed, decodedText);
+        } catch (e) {
+            console.error("Camera scan invalid data", e);
+        }
+    };
+
     // --- SPLIT VIEW HELPERS ---
     const activateSplit = (mode: 'INDEPENDENT' | 'LINKED') => {
         if (!clicr) return;
@@ -611,8 +624,7 @@ export default function ClicrCounterPage() {
 
     return (
         <div className="flex flex-col h-[100vh] bg-black relative overflow-hidden" onClick={() => inputRef.current?.focus()}>
-
-            {/* Hidden Textarea for Multiline Scanners */}
+            {/* Hidden Input */}
             <textarea
                 ref={inputRef as any}
                 value={scannerInput}
@@ -622,250 +634,100 @@ export default function ClicrCounterPage() {
                 autoComplete="off"
             />
 
-            {/* Top Bar - No margin bottom, handled by flex gap */}
-            <div className="flex bg-black pt-4 pb-2 px-4 items-center justify-between z-30 relative shrink-0">
-                <div className="flex items-center gap-2">
-                    <button onClick={() => router.push('/clicr')} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
-                        <ArrowLeft className="w-6 h-6" />
-                    </button>
-                    {/* Config Trigger */}
-                    <button onClick={() => { setEditLabels(customLabels); setDraftSoloMode(soloMode); setShowConfigModal(true); }} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
-                        <Settings2 className="w-5 h-5" />
-                    </button>
+            {/* UI LAYER - PIXEL MATCH */}
+            <div className="flex flex-col h-full relative z-10">
+
+                {/* 1. Header */}
+                <header className="flex justify-between items-start pt-8 pb-4 px-6 shrink-0">
+                    <div>
+                        <h2 className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.2em] mb-1">
+                            {venue?.name || 'VENUE'}
+                        </h2>
+                        <h1 className="text-white font-bold text-2xl tracking-tight">
+                            {clicr.name}
+                        </h1>
+                    </div>
+                    {/* Status Dot */}
+                    <div className="flex gap-4 items-center">
+                        <div className={cn("w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.6)]",
+                            isLoading ? "bg-yellow-500" : "bg-[#00C853]"
+                        )} />
+                    </div>
+                </header>
+
+                {/* 2. Main Occupancy */}
+                <div className="flex-1 flex flex-col items-center justify-center min-h-0">
+                    <OccupancyDisplay
+                        count={totalAreaCount ?? 0}
+                        capacity={(currentArea?.capacity_max || venue?.default_capacity_total) || undefined}
+                        percent={
+                            (currentArea?.capacity_max || venue?.default_capacity_total)
+                                ? Math.round((totalAreaCount || 0) / (currentArea?.capacity_max || venue?.default_capacity_total || 1) * 100)
+                                : undefined
+                        }
+                    />
                 </div>
 
-                <div className="text-center">
-                    <h2 className="text-lg font-bold text-white leading-none">{clicr.name}</h2>
-                    {layoutMode === 'SINGLE' && <span className="text-xs text-slate-500 font-mono">LIVE SYNC ACTIVE</span>}
-                    {layoutMode === 'SPLIT' && <span className="text-xs text-primary font-mono font-bold">SPLIT VIEW</span>}
+                {/* 3. Stats Row */}
+                <div className="grid grid-cols-3 gap-3 px-6 mb-6 shrink-0">
+                    <MetricCard label="TOTAL IN" value={globalIn || 0} />
+                    <MetricCard label="NET" value={totalAreaCount || 0} />
+                    <MetricCard label="TOTAL OUT" value={globalOut || 0} />
                 </div>
 
-                {/* Right side spacer to keep title centered */}
-                {/* Right side spacer - repurposed for Debug */}
-                <div className="w-[72px] flex justify-end">
-                    <button
-                        onClick={() => setShowDebug(!showDebug)}
-                        className={cn("p-2 rounded-full transition-colors", showDebug ? "bg-indigo-500/20 text-indigo-400" : "hover:bg-slate-800 text-slate-600 hover:text-white")}
-                    >
-                        <Bug className="w-5 h-5" />
-                    </button>
+                {/* 4. Action Buttons */}
+                <div className="flex flex-col gap-3 px-6 pb-8 shrink-0">
+                    <ActionButton
+                        label={customLabels.label_a || "GUEST IN"}
+                        onClick={() => handleGenderTap('M', 1)}
+                        className="h-24 md:h-28 text-lg"
+                        icon={<div className="mb-[-4px]"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg></div>}
+                    />
+
+                    {/* Only show OUT if bidirectional */}
+                    {(clicr.direction_mode !== 'in_only') && (
+                        <ActionButton
+                            label="GUEST OUT"
+                            variant="out"
+                            onClick={() => handleGenderTap('M', -1)}
+                            className="h-24 md:h-28 text-lg bg-[#1E3A8A] hover:bg-[#1E40AF]"
+                            icon={<div className="mb-[-4px]"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 12H19" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg></div>}
+                        />
+                    )}
                 </div>
             </div>
 
-            {/* Main Content - SINGLE VIEW */}
-            {layoutMode === 'SINGLE' && (
-                <div className="flex-1 flex flex-col gap-2 relative overflow-hidden">
-
-                    {/* 1. Occupancy Dashboard (Top) - Flex 1 to take available space */}
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4 py-2 min-h-0">
-
-                        {/* Main Big Occupancy Display */}
-                        <div className="relative group cursor-default">
-                            <div className="text-[15vh] md:text-9xl leading-none font-mono font-bold text-white tracking-widest tabular-nums filter drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
-                                {totalAreaCount !== undefined && totalAreaCount !== null ? totalAreaCount : <span className="text-4xl animate-pulse">...</span>}
-                            </div>
-                            <div className="text-center text-slate-500 font-bold uppercase tracking-[0.2em] text-xs mt-2">
-                                {totalAreaCount !== undefined && totalAreaCount !== null ? "Live Occupancy" : "Connecting..."}
-                            </div>
-                        </div>
-
-                        {/* Stats Row (In/Out) */}
-                        <div className="grid grid-cols-2 gap-4 w-full max-w-xs px-4">
-                            {/* Total In */}
-                            <button
-                                onClick={() => setShowBulkModal(true)}
-                                className="bg-slate-900/50 border border-emerald-900/30 rounded-2xl p-2 flex flex-col items-center hover:bg-slate-900 hover:border-emerald-500/50 transition-all active:scale-95"
-                            >
-                                <div className="flex items-center gap-2 text-emerald-400 mb-1">
-                                    <ArrowUpCircle className="w-4 h-4" />
-                                    <span className="text-[10px] font-bold uppercase">Total In</span>
-                                </div>
-                                <div className="text-xl font-mono text-white font-bold">{globalIn ?? '-'}</div>
-                                <div className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">Adjust</div>
-                            </button>
-
-                            {/* Total Out */}
-                            <div className="bg-slate-900/50 border border-rose-900/30 rounded-2xl p-2 flex flex-col items-center opacity-80">
-                                <div className="flex items-center gap-2 text-rose-400 mb-1">
-                                    <ArrowDownCircle className="w-4 h-4" />
-                                    <span className="text-[10px] font-bold uppercase">Total Out</span>
-                                </div>
-                                <div className="text-xl font-mono text-white font-bold">{globalOut ?? '-'}</div>
-                            </div>
-                        </div>
-                    </div>
-
-
-                    {/* 2. Control Buttons (Bottom Part) - Flex Grow slightly but kept constrained */}
-                    <div className="flex gap-4 shrink-0 px-4 pb-2 h-[20vh] min-h-[140px] max-h-[200px]">
-                        {(() => {
-                            const direction = clicr.direction_mode || 'bidirectional';
-                            const canIn = direction !== 'out_only';
-                            const canOut = direction !== 'in_only';
-
-                            if (soloMode) {
-                                // SOLO MODE
-                                return (
-                                    <div className="flex-1 flex flex-col gap-2 h-full">
-                                        {canIn && (
-                                            <TapButton
-                                                type="plus"
-                                                label={customLabels.label_a || 'COUNT'}
-                                                color="blue"
-                                                onClick={() => handleGenderTap('M', 1)}
-                                                className={cn("rounded-[1.5rem]", canOut ? "flex-1" : "h-full")}
-                                            />
-                                        )}
-                                        {canOut && (
-                                            <TapButton
-                                                type="minus"
-                                                color="blue"
-                                                onClick={() => handleGenderTap('M', -1)}
-                                                className={cn("rounded-[1.5rem] shrink-0", canIn ? "h-[50px]" : "h-full flex-1")}
-                                            />
-                                        )}
-                                    </div>
-                                );
-                            } else {
-                                // DUAL MODE
-                                return (
-                                    <>
-                                        {/* Button A */}
-                                        <div className="flex-1 flex flex-col gap-2 h-full">
-                                            {canIn && (
-                                                <TapButton
-                                                    type="plus"
-                                                    label={customLabels.label_a}
-                                                    color="blue"
-                                                    onClick={() => handleGenderTap('M', 1)}
-                                                    className={cn("rounded-[1.5rem]", canOut ? "flex-1" : "h-full")}
-                                                />
-                                            )}
-                                            {canOut && (
-                                                <TapButton
-                                                    type="minus"
-                                                    color="blue"
-                                                    onClick={() => handleGenderTap('M', -1)}
-                                                    className={cn("rounded-[1.5rem] shrink-0", canIn ? "h-[50px]" : "h-full flex-1")}
-                                                />
-                                            )}
-                                        </div>
-
-                                        {/* Button B */}
-                                        <div className="flex-1 flex flex-col gap-2 h-full">
-                                            {canIn && (
-                                                <TapButton
-                                                    type="plus"
-                                                    label={customLabels.label_b}
-                                                    color="pink"
-                                                    onClick={() => handleGenderTap('F', 1)}
-                                                    className={cn("rounded-[1.5rem]", canOut ? "flex-1" : "h-full")}
-                                                />
-                                            )}
-                                            {canOut && (
-                                                <TapButton
-                                                    type="minus"
-                                                    color="pink"
-                                                    onClick={() => handleGenderTap('F', -1)}
-                                                    className={cn("rounded-[1.5rem] shrink-0", canIn ? "h-[50px]" : "h-full flex-1")}
-                                                />
-                                            )}
-                                        </div>
-                                    </>
-                                );
+            {/* SCANNER OVERLAY (Absolute z-50) */}
+            <AnimatePresence>
+                {lastScan && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 50 }}
+                        className="absolute inset-0 z-50"
+                    >
+                        <ScannerResult
+                            status={
+                                lastScan.scan_result === 'ACCEPTED' ? 'ALLOWED' :
+                                    lastScan.scan_result === 'DENIED' && ((lastScan as any).uiMessage?.includes('BANNED') || (lastScan as any).reason === 'BANNED') ? 'DENIED_BANNED' :
+                                        'DENIED_UNDERAGE'
                             }
-                        })()}
-                    </div>
+                            data={{
+                                name: `${lastScan.first_name || 'GUEST'} ${lastScan.last_name || ''}`,
+                                age: lastScan.age || 0,
+                                dob: lastScan.dob || 'Unknown',
+                                exp: 'Valid',
+                            }}
+                            onScanNext={() => setLastScan(null)}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-                    {/* Reset Button */}
-                    <div className="flex justify-center mb-1 shrink-0">
-                        <button
-                            onClick={handleReset}
-                            className="flex items-center gap-2 px-6 py-2 bg-red-950/20 border border-red-900/40 rounded-full text-red-500/80 text-[10px] font-bold uppercase tracking-widest hover:bg-red-900/60 hover:text-red-400 hover:border-red-500/50 transition-all active:scale-95"
-                        >
-                            <Trash2 className="w-3 h-3" />
-                            Reset All Counts
-                        </button>
-                    </div>
-
-
-                    {/* 3. ID Scanner (Bottom Edge) */}
-                    <div className="h-[70px] w-full relative shrink-0">
-                        <AnimatePresence mode="wait">
-                            {lastScan ? (
-                                <motion.div
-                                    key="result"
-                                    initial={{ y: "100%" }}
-                                    animate={{ y: 0 }}
-                                    exit={{ y: "100%" }}
-                                    className={cn(
-                                        "absolute inset-0 rounded-t-3xl flex items-center justify-between px-8 border-t-2 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-20 cursor-pointer",
-                                        pendingScan
-                                            ? "bg-indigo-950 border-indigo-500 animate-pulse" // Pending Color
-                                            : (lastScan.scan_result === 'ACCEPTED' ? "bg-emerald-950 border-emerald-500" : "bg-red-950 border-red-500")
-                                    )}
-                                    onClick={() => {
-                                        if (pendingScan) return; // Don't clear if pending!
-                                        setLastScan(null);
-                                    }}
-                                >
-                                    <div className="flex items-center gap-4">
-                                        {pendingScan ? (
-                                            <Zap className="w-10 h-10 text-indigo-400 animate-spin-slow" />
-                                        ) : (
-                                            lastScan.scan_result === 'ACCEPTED' ? (
-                                                <CheckCircle2 className="w-10 h-10 text-emerald-400" />
-                                            ) : (
-                                                <XCircle className="w-10 h-10 text-red-500" />
-                                            )
-                                        )}
-                                        <div>
-                                            <h2 className={cn("text-2xl font-black uppercase tracking-wider leading-none",
-                                                pendingScan ? "text-indigo-400" : (lastScan.scan_result === 'ACCEPTED' ? "text-emerald-400" : "text-red-500")
-                                            )}>
-                                                {pendingScan ? "SELECT CATEGORY" : lastScan.scan_result}
-                                            </h2>
-                                            <div className="text-white/60 text-xs font-mono mt-1">
-                                                AGE: {lastScan.age} • SEX: {lastScan.sex}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="text-xs text-white/40 font-bold uppercase tracking-widest">
-                                        {pendingScan ? "Tap Button Above" : "Tap to Clear"}
-                                    </div>
-                                </motion.div>
-                            ) : (
-                                <motion.div
-                                    key="idle"
-                                    initial={{ y: "100%" }}
-                                    animate={{ y: 0 }}
-                                    exit={{ y: "100%" }}
-                                    className="absolute inset-0 bg-[#0f1218] rounded-t-3xl flex items-center justify-between px-8 border-t border-white/5"
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center">
-                                            <ScanFace className="w-5 h-5 text-slate-500" />
-                                        </div>
-                                        <div>
-                                            <div className="text-s font-bold text-white uppercase tracking-wider">Ready to Scan</div>
-                                            <div className="text-xs text-slate-500">Use Simulator (⌘+J) or hardware scanner</div>
-                                        </div>
-                                    </div>
-
-                                    {/* Small Camera Trigger for visual completeness */}
-                                    <button
-                                        onClick={() => setShowCameraScanner(true)}
-                                        className="text-xs bg-slate-800 text-slate-400 px-3 py-1.5 rounded-full font-bold hover:bg-slate-700 hover:text-white transition-colors"
-                                    >
-                                        Use Camera
-                                    </button>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-
-                </div>
-            )}
+            {/* Debug / Config Access (Hidden or Subtle) */}
+            <div className="absolute top-8 right-6 z-20 opacity-0 hover:opacity-100 transition-opacity">
+                <button onClick={() => setShowConfigModal(true)}><Settings2 className="text-slate-700 w-6 h-6" /></button>
+            </div>
 
             {/* CAMERA SCANNER MODAL */}
             <AnimatePresence>
@@ -881,39 +743,18 @@ export default function ClicrCounterPage() {
                                 onClick={() => setShowCameraScanner(false)}
                                 className="p-4 bg-slate-900 rounded-full text-white"
                             >
-                                <XCircle className="w-8 h-8" />
+                                <XCircle className="w-6 h-6" />
                             </button>
                         </div>
 
-                        {/* Camera Scanner Component Wrapper */}
-                        <div className="w-full max-w-md bg-black relative rounded-3xl overflow-hidden border border-slate-800">
-                            <CameraScanner onScan={(text) => {
-                                try {
-                                    // Parse raw text from camera (AAMVA)
-                                    const parsed = parseAAMVA(text);
-                                    processScan(parsed);
-                                } catch (e) {
-                                    console.warn("Scan Error", e);
-                                }
-                            }} />
-                        </div>
+                        <CameraScanner onScan={handleCameraScan} />
 
-                        <div className="mt-8 text-slate-500 text-sm text-center">
-                            Align barcode within the frame.
-                            <br />
-                            <span className="text-xs opacity-50">Supports PDF417 (US Driver's License)</span>
+                        <div className="absolute bottom-12 text-center text-slate-500 text-sm">
+                            Align ID barcode within the frame
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {/* SPLIT VIEW IMPLEMENTATION */}
-            {layoutMode === 'SPLIT' && (
-                <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
-                    <p className="text-white">Split View is active (Simplified for layout demo)</p>
-                    <button onClick={() => setLayoutMode('SINGLE')} className="bg-slate-800 p-2 text-white rounded">Back to Single</button>
-                </div>
-            )}
 
             {/* SPLIT SETUP MODAL */}
             <AnimatePresence>
@@ -1231,7 +1072,7 @@ export default function ClicrCounterPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 }
 
