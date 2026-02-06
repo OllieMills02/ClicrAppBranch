@@ -71,7 +71,7 @@ export default function ClicrDetailPage() {
 
   const updateAreaCount = useCallback(
     (kind: 'male' | 'female', delta: number) => {
-      if (!area) return
+      if (!area || !device) return
       const male = Math.max(0, (area.count_male ?? 0) + (kind === 'male' ? delta : 0))
       const female = Math.max(0, (area.count_female ?? 0) + (kind === 'female' ? delta : 0))
       // Update UI immediately so taps feel instant
@@ -85,25 +85,24 @@ export default function ClicrDetailPage() {
             }
           : null
       )
-      // Persist in background (no await, no blocking)
+      // Persist and audit in background via RPC (updates area + logs to occupancy_logs with device_id)
       const supabase = createClient()
       const areaId = area.id
+      const deviceId = device.id
       ;(async () => {
-        await supabase
-          .from('areas')
-          .update({
-            count_male: male,
-            count_female: female,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', areaId)
+        await supabase.rpc('update_area_occupancy', {
+          p_area_id: areaId,
+          p_device_id: deviceId,
+          p_count_male: male,
+          p_count_female: female,
+        })
       })()
     },
-    [area]
+    [area, device]
   )
 
   const clearCount = useCallback(() => {
-    if (!area) return
+    if (!area || !device) return
     setArea((prev) =>
       prev
         ? {
@@ -116,17 +115,16 @@ export default function ClicrDetailPage() {
     )
     const supabase = createClient()
     const areaId = area.id
+    const deviceId = device.id
     ;(async () => {
-      await supabase
-        .from('areas')
-        .update({
-          count_male: 0,
-          count_female: 0,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', areaId)
+      await supabase.rpc('update_area_occupancy', {
+        p_area_id: areaId,
+        p_device_id: deviceId,
+        p_count_male: 0,
+        p_count_female: 0,
+      })
     })()
-  }, [area])
+  }, [area, device])
 
   if (loading) {
     return (
