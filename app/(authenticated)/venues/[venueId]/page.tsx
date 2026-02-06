@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams, useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -17,6 +17,8 @@ import {
   MapPin,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import VenueAreas from './_components/VenueAreas'
+import VenueDevicesTab from './_components/VenueDevicesTab'
 
 type Venue = {
   id: string
@@ -41,13 +43,23 @@ const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: 
   { id: 'LOGS', label: 'Logs', icon: FileText },
 ]
 
+const TAB_IDS = new Set<TabId>(TABS.map((t) => t.id))
+
+function tabFromSearchParams(searchParams: URLSearchParams): TabId {
+  const t = searchParams.get('tab') as TabId | null
+  return t && TAB_IDS.has(t) ? t : 'OVERVIEW'
+}
+
 export default function VenueDetailPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const venueId = params?.venueId as string
   const [venue, setVenue] = useState<Venue | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<TabId>('OVERVIEW')
+  const activeTab = tabFromSearchParams(searchParams)
 
   const fetchVenue = useCallback(async () => {
     if (!venueId) return
@@ -127,7 +139,8 @@ export default function VenueDetailPage() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              type="button"
+              onClick={() => router.replace(`${pathname}?tab=${tab.id}`)}
               className={cn(
                 'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap rounded-t-lg',
                 isActive
@@ -146,9 +159,9 @@ export default function VenueDetailPage() {
         {activeTab === 'OVERVIEW' && (
           <VenueOverviewTab venueId={venueId} venue={venue} onRefresh={fetchVenue} />
         )}
-        {activeTab === 'AREAS' && <VenueAreasPlaceholder />}
+        {activeTab === 'AREAS' && <VenueAreas venueId={venueId} venueCapacity={venue.capacity} />}
         {activeTab === 'CAPACITY' && <VenueCapacityTab venue={venue} onRefresh={fetchVenue} />}
-        {activeTab === 'DEVICES' && <VenueDevicesPlaceholder />}
+        {activeTab === 'DEVICES' && <VenueDevicesTab venueId={venueId} />}
         {activeTab === 'TEAM' && <VenueTeamTab venueId={venueId} />}
         {activeTab === 'SETTINGS' && <VenueSettingsTab venue={venue} onRefresh={fetchVenue} />}
         {activeTab === 'LOGS' && <VenueLogsTab venueId={venueId} />}
@@ -242,15 +255,6 @@ function VenueOverviewTab({
   )
 }
 
-function VenueAreasPlaceholder() {
-  return (
-    <div className="py-12 text-center text-slate-500 max-w-md mx-auto">
-      <Layers className="w-12 h-12 mx-auto mb-4 opacity-50" />
-      <p>Areas are not configured in the current schema. You can add an areas table later to define zones within a venue.</p>
-    </div>
-  )
-}
-
 function VenueCapacityTab({ venue, onRefresh }: { venue: Venue; onRefresh: () => void }) {
   const current = venue.current_occupancy ?? 0
   const cap = venue.capacity || 0
@@ -290,15 +294,6 @@ function VenueCapacityTab({ venue, onRefresh }: { venue: Venue; onRefresh: () =>
       <button type="button" onClick={onRefresh} className="text-sm text-primary hover:underline">
         Refresh
       </button>
-    </div>
-  )
-}
-
-function VenueDevicesPlaceholder() {
-  return (
-    <div className="py-12 text-center text-slate-500 max-w-md mx-auto">
-      <MonitorSmartphone className="w-12 h-12 mx-auto mb-4 opacity-50" />
-      <p>Devices (clickers) are not in the current schema. Add a devices table to manage hardware per venue.</p>
     </div>
   )
 }

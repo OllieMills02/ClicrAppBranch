@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useApp } from '@/lib/store';
+import { useApp } from '../../lib/store';
 import Link from 'next/link';
 
 export default function QAPage() {

@@ -34,16 +34,30 @@ const generateMockID = () => {
 };
 
 
+type DeviceProp = { id: string; area_id: string; name: string; flow_mode: string; current_count: number };
+type AreaProp = { id: string; name?: string; venue_id: string; current_occupancy?: number | null; capacity?: number };
+type VenueProp = { id: string; name?: string; default_capacity_total?: number; capacity?: number };
+
 export default function ClicrPanel({
     clicrId,
     overrideLabel,
     className,
-    showLayoutControls = false
+    showLayoutControls = false,
+    device: deviceProp,
+    area: areaProp,
+    venue: venueProp,
+    onRecordEvent,
+    onReset
 }: {
     clicrId?: string,
     overrideLabel?: string,
     className?: string,
-    showLayoutControls?: boolean
+    showLayoutControls?: boolean,
+    device?: DeviceProp,
+    area?: AreaProp,
+    venue?: VenueProp,
+    onRecordEvent?: (delta: number) => Promise<void>,
+    onReset?: () => Promise<void>
 }) {
     const {
         clicrs, areas, events, venues,
@@ -53,8 +67,17 @@ export default function ClicrPanel({
     } = useApp();
 
     const id = clicrId;
-    const rawClicr = (clicrs || []).find((c) => c.id === id);
+    const fromProps = !!deviceProp;
+    const rawClicrFromStore = (clicrs || []).find((c) => c.id === id);
     const lastClicrRef = useRef<any>(null);
+    const clicrFromProps = deviceProp ? {
+        id: deviceProp.id,
+        name: deviceProp.name,
+        area_id: deviceProp.area_id,
+        flow_mode: deviceProp.flow_mode,
+        current_count: deviceProp.current_count
+    } : null;
+    const rawClicr = fromProps ? clicrFromProps : rawClicrFromStore;
     if (rawClicr) lastClicrRef.current = rawClicr;
     const clicr = rawClicr || lastClicrRef.current;
     const [showCameraScanner, setShowCameraScanner] = useState(false);
@@ -90,7 +113,9 @@ export default function ClicrPanel({
     });
 
     // Calculate total area occupancy from SNAPSHOT (Source of Truth)
-    const currentArea = (areas || []).find(a => a.id === clicr?.area_id);
+    const currentArea = fromProps && areaProp
+        ? { ...areaProp, current_occupancy: areaProp.current_occupancy ?? 0 }
+        : (areas || []).find((a: { id: string }) => a.id === clicr?.area_id);
     const lastOccupancyRef = useRef<number | null>(null);
 
     if (currentArea?.current_occupancy !== undefined) {
@@ -104,9 +129,11 @@ export default function ClicrPanel({
     const venueId = currentArea?.venue_id;
 
     // Venue Occupancy = Sum of all areas in venue (Realtime)
-    const venueAreas = (areas || []).filter(a => a.venue_id === venueId);
-    const currentVenueOccupancy = venueAreas.reduce((acc, a) => acc + (a.current_occupancy || 0), 0);
-    const venue = (venues || []).find(v => v.id === venueId);
+    const venueAreas = fromProps ? (areaProp ? [areaProp] : []) : (areas || []).filter((a: { venue_id?: string }) => a.venue_id === venueId);
+    const currentVenueOccupancy = venueAreas.reduce((acc: number, a: { current_occupancy?: number | null }) => acc + (a.current_occupancy || 0), 0);
+    const venue = fromProps && venueProp
+        ? { ...venueProp, default_capacity_total: venueProp.default_capacity_total ?? venueProp.capacity }
+        : (venues || []).find((v: { id: string }) => v.id === venueId);
 
     // Keep event-based stats for "Session" view if needed, but rely on snapshots for enforcement
     const venueEvents = (events || []).filter(e => e.venue_id === venueId);
@@ -306,6 +333,11 @@ export default function ClicrPanel({
             setLastScan(null); // Clear the visual overlay too
         }
 
+        if (onRecordEvent) {
+            onRecordEvent(delta).catch(() => {});
+            return;
+        }
+
         // 1. Record the Count Event (Changes Occupancy) with Gender
         recordEvent({
             venue_id: venueId,
@@ -342,6 +374,10 @@ export default function ClicrPanel({
 
     const handleBulkSubmit = () => {
         if (!clicr || !venueId) return;
+        if (bulkValue !== 0 && onRecordEvent) {
+            onRecordEvent(bulkValue).then(() => { setBulkValue(0); setShowBulkModal(false); }).catch(() => {});
+            return;
+        }
         if (bulkValue !== 0) {
             recordEvent({
                 venue_id: venueId,
@@ -362,6 +398,19 @@ export default function ClicrPanel({
     const handleReset = async () => {
         if (!window.confirm('WARNING: RESET ALL COUNTS TO ZERO?')) return;
         if (!venueId) return;
+
+        if (onReset) {
+            try {
+                await onReset();
+                setBulkValue(0);
+                setLastScan(null);
+                setScannerInput('');
+            } catch (e) {
+                console.error("Reset failed", e);
+                alert("Failed to reset. Please try again or check connection.");
+            }
+            return;
+        }
 
         try {
             await resetCounts('VENUE', venueId);
@@ -473,16 +522,20 @@ export default function ClicrPanel({
                     }
                 }
 
-                recordEvent({
-                    venue_id: venueId,
-                    area_id: clicr?.area_id || 'area_001',
-                    clicr_id: clicr?.id || 'dev_001',
-                    delta: 1,
-                    flow_type: 'IN',
-                    gender: parsed.sex || 'M',
-                    event_type: 'SCAN',
-                    idempotency_key: Math.random().toString(36)
-                });
+                if (onRecordEvent) {
+                    onRecordEvent(1).catch(() => {});
+                } else {
+                    recordEvent({
+                        venue_id: venueId,
+                        area_id: clicr?.area_id || 'area_001',
+                        clicr_id: clicr?.id || 'dev_001',
+                        delta: 1,
+                        flow_type: 'IN',
+                        gender: parsed.sex || 'M',
+                        event_type: 'SCAN',
+                        idempotency_key: Math.random().toString(36)
+                    });
+                }
                 if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
             }
         } else {

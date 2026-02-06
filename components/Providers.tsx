@@ -1,6 +1,6 @@
 "use client";
 
-import { AppProvider } from "@/lib/store";
+import { AppProvider } from "../lib/store";
 
 export function Providers({ children }: { children: React.ReactNode }) {
     return (

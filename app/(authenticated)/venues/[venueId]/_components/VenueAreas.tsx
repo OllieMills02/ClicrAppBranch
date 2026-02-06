@@ -1,41 +1,122 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { useApp } from '@/lib/store';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Area, AreaType, CountingMode } from '@/lib/types';
-import {
-    Plus,
-    Edit2,
-    Trash2,
-    Move
-} from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Plus, Edit2, Trash2, Move, MonitorSmartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function VenueAreas({ venueId }: { venueId: string }) {
-    const { areas, venues, addArea, updateArea } = useApp();
+type AreaRow = Area & { capacity?: number; capacity_max?: number; percent_full?: number; area_type?: string };
 
-    // Use Standardized Metrics Selector
-    const venueAreas = useMemo(() => {
-        const venue = venues.find(v => v.id === venueId);
-        const venueCap = venue?.total_capacity || venue?.default_capacity_total || 0;
+type VenueAreaDisplay = {
+    id: string;
+    name: string;
+    venue_id?: string;
+    current_occupancy?: number;
+    capacity: number;
+    percent_full: number;
+    area_type?: string;
+    capacity_max?: number;
+    default_capacity?: number;
+    [key: string]: unknown;
+};
 
-        return areas
-            .filter(a => a.venue_id === venueId)
-            .map(area => {
-                const occ = area.current_occupancy || 0;
-                // Prefer DB field 'capacity_max', fall back to legacy 'default_capacity', then Venue Fallback
-                const cap = area.capacity_max || area.default_capacity || venueCap || 0;
-                return {
-                    ...area,
-                    capacity: cap,
-                    percent_full: cap > 0 ? Math.round((occ / cap) * 100) : 0
-                };
+export default function VenueAreas({ venueId, venueCapacity = 0 }: { venueId: string; venueCapacity?: number }) {
+    const [areas, setAreas] = useState<AreaRow[]>([]);
+    const [deviceCountByAreaId, setDeviceCountByAreaId] = useState<Record<string, number>>({});
+    const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
+
+    const fetchAreas = useCallback(async () => {
+        setLoading(true);
+        setFetchError(null);
+        const supabase = createClient();
+        const { data, error } = await supabase.from('areas').select('*').eq('venue_id', venueId);
+        setLoading(false);
+        if (error) {
+            setFetchError(error.message);
+            setAreas([]);
+            return;
+        }
+        setAreas((data ?? []) as AreaRow[]);
+    }, [venueId]);
+
+    useEffect(() => {
+        const id = typeof venueId === 'string' ? venueId : '';
+        if (!id) {
+            queueMicrotask(() => {
+                setLoading(false);
+                setFetchError('Invalid venue');
+                setAreas([]);
             });
-    }, [areas, venues, venueId]);
+            return;
+        }
+        let cancelled = false;
+        const supabase = createClient();
+        supabase
+            .from('areas')
+            .select('*')
+            .eq('venue_id', id)
+            .then(({ data, error }) => {
+                if (cancelled) return;
+                setLoading(false);
+                if (error) {
+                    setFetchError(error.message);
+                    setAreas([]);
+                    return;
+                }
+                setFetchError(null);
+                setAreas((data ?? []) as AreaRow[]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [venueId]);
+
+    useEffect(() => {
+        if (areas.length === 0) {
+            queueMicrotask(() => setDeviceCountByAreaId({}));
+            return;
+        }
+        let cancelled = false;
+        const supabase = createClient();
+        const areaIds = areas.map((a) => a.id);
+        supabase
+            .from('devices')
+            .select('area_id')
+            .in('area_id', areaIds)
+            .then(({ data }) => {
+                if (cancelled) return;
+                const count: Record<string, number> = {};
+                areaIds.forEach((id) => (count[id] = 0));
+                (data ?? []).forEach((row: { area_id: string }) => {
+                    count[row.area_id] = (count[row.area_id] ?? 0) + 1;
+                });
+                setDeviceCountByAreaId(count);
+            });
+        return () => { cancelled = true; };
+    }, [areas]);
+
+    const venueAreas: VenueAreaDisplay[] = useMemo(() => {
+        return areas.map(area => {
+            const occ = Number(area.current_occupancy) || 0;
+            const rawCap = (area as { capacity?: number }).capacity ?? area.capacity_max ?? area.default_capacity ?? venueCapacity;
+            const cap = Number(rawCap) || 0;
+            const percent_full = cap > 0 ? Math.round((occ / cap) * 100) : 0;
+            return {
+                ...area,
+                name: area.name ?? '',
+                capacity: cap,
+                percent_full,
+                area_type: (area as { area_type?: string }).area_type,
+            } as VenueAreaDisplay;
+        });
+    }, [areas, venueCapacity]);
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingArea, setEditingArea] = useState<Partial<Area> | null>(null);
+    const [saving, setSaving] = useState(false);
 
     const handleCreate = () => {
         setEditingArea({
@@ -43,49 +124,48 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
             name: '',
             area_type: 'MAIN',
             capacity_max: 0,
-            default_capacity: 0, // Legacy support
+            default_capacity: 0,
             counting_mode: 'BOTH',
-            is_active: true
+            is_active: true,
         });
         setIsEditModalOpen(true);
     };
 
-    const handleEdit = (summary: any) => {
-        const fullArea = areas.find(a => a.id === summary.id);
-        if (fullArea) {
-            setEditingArea({
-                ...fullArea,
-                // Ensure edit form sees the effective capacity
-                default_capacity: fullArea.capacity_max || fullArea.default_capacity || 0
-            });
-            setIsEditModalOpen(true);
-        }
+    const handleEdit = (summary: VenueAreaDisplay) => {
+        const cap = summary.capacity ?? summary.capacity_max ?? summary.default_capacity ?? 0;
+        setEditingArea({
+            ...summary,
+            default_capacity: cap,
+        });
+        setIsEditModalOpen(true);
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editingArea || !editingArea.name) return;
+        if (!editingArea?.name?.trim()) return;
 
-        // Sync legacy field for compatibility
-        const areaToSave = {
-            ...editingArea,
-            capacity_max: editingArea.default_capacity, // UI binds to default_capacity
-        } as Area;
+        const supabase = createClient();
+        const capacity = editingArea.default_capacity ?? (editingArea as { capacity_max?: number }).capacity_max ?? 0;
+        const payload = {
+            venue_id: venueId,
+            name: editingArea.name.trim(),
+            capacity,
+            area_type: (editingArea.area_type as string) ?? 'MAIN',
+            counting_mode: (editingArea.counting_mode as string) ?? 'BOTH',
+            is_active: editingArea.is_active !== false,
+            updated_at: new Date().toISOString(),
+        };
 
+        setSaving(true);
         if (editingArea.id) {
-            await updateArea(areaToSave);
+            await supabase.from('areas').update(payload).eq('id', editingArea.id);
         } else {
-            const newArea: Area = {
-                ...areaToSave,
-                id: Math.random().toString(36).substring(7), // Temp ID until refresh
-                venue_id: venueId,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            } as Area;
-            await addArea(newArea);
+            await supabase.from('areas').insert(payload);
         }
+        setSaving(false);
         setIsEditModalOpen(false);
         setEditingArea(null);
+        await fetchAreas();
     };
 
     return (
@@ -101,8 +181,16 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                 </button>
             </div>
 
+            {fetchError && (
+                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                    {fetchError}
+                </div>
+            )}
+            {loading ? (
+                <div className="p-8 text-center text-slate-500">Loading areas…</div>
+            ) : (
             <div className="grid grid-cols-1 gap-4">
-                {venueAreas.length === 0 && (
+                {venueAreas.length === 0 && !fetchError && (
                     <div className="p-8 text-center bg-slate-900/30 rounded-2xl border border-slate-800 border-dashed">
                         <p className="text-slate-500">No areas configured yet. Add one to start tracking occupancy.</p>
                     </div>
@@ -118,7 +206,7 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                         </div>
 
                         <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-slate-400">
-                            {area.name.slice(0, 2).toUpperCase()}
+                            {(area.name || '  ').slice(0, 2).toUpperCase()}
                         </div>
 
                         <div className="flex-1">
@@ -153,6 +241,10 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                                     </div>
                                 )}
                             </div>
+                            <div className="flex items-center gap-2 mt-2 text-slate-500 text-xs">
+                                <MonitorSmartphone className="w-3.5 h-3.5" />
+                                <span>{deviceCountByAreaId[area.id] ?? 0} device{(deviceCountByAreaId[area.id] ?? 0) !== 1 ? 's' : ''}</span>
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -170,6 +262,7 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                     </div>
                 ))}
             </div>
+            )}
 
             {/* Edit Modal */}
             <AnimatePresence>
@@ -191,10 +284,11 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                             <h2 className="text-xl font-bold mb-4">{editingArea?.id ? 'Edit Area' : 'Create Area'}</h2>
                             <form onSubmit={handleSave} className="space-y-4">
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium text-slate-400">Area Name</label>
+                                    <label htmlFor="venue-area-name" className="text-sm font-medium text-slate-400">Area Name</label>
                                     <input
+                                        id="venue-area-name"
                                         type="text"
-                                        value={editingArea?.name}
+                                        value={editingArea?.name ?? ''}
                                         onChange={e => setEditingArea(prev => ({ ...prev, name: e.target.value }))}
                                         className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
                                         placeholder="e.g. Main Floor"
@@ -205,7 +299,7 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium text-slate-400">Type</label>
                                         <select
-                                            value={editingArea?.area_type}
+                                            value={typeof editingArea?.area_type === 'string' ? editingArea.area_type : 'MAIN'}
                                             onChange={e => setEditingArea(prev => ({ ...prev, area_type: e.target.value as AreaType }))}
                                             className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
                                         >
@@ -222,8 +316,8 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                                         <label className="text-sm font-medium text-slate-400">Capacity</label>
                                         <input
                                             type="number"
-                                            value={editingArea?.default_capacity || ''}
-                                            onChange={e => setEditingArea(prev => ({ ...prev, default_capacity: parseInt(e.target.value) || 0 }))}
+                                            value={editingArea?.default_capacity !== undefined && editingArea?.default_capacity !== null ? Number(editingArea.default_capacity) : ''}
+                                            onChange={e => setEditingArea(prev => ({ ...prev, default_capacity: Number(e.target.value) || 0 }))}
                                             className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
                                             placeholder="0 for unlimited"
                                         />
@@ -260,9 +354,10 @@ export default function VenueAreas({ venueId }: { venueId: string }) {
                                     </button>
                                     <button
                                         type="submit"
-                                        className="px-6 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg font-bold shadow-lg shadow-primary/20"
+                                        disabled={saving}
+                                        className="px-6 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
                                     >
-                                        Save Area
+                                        {saving ? 'Saving…' : 'Save Area'}
                                     </button>
                                 </div>
                             </form>
