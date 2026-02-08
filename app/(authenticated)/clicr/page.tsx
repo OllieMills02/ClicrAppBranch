@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { ArrowRight, Play, Layers } from 'lucide-react'
@@ -15,55 +15,113 @@ export default function ClicrListPage() {
   const [areas, setAreas] = useState<AreaRow[]>([])
   const [devices, setDevices] = useState<DeviceRow[]>([])
   const [loading, setLoading] = useState(true)
+  const hasLoadedOnce = useRef(false)
 
-useEffect(() => {
-  let cancelled = false;
-  const supabase = createClient();
-
-  const fetchData = async () => {
-    setLoading(true);
-
-    // 1. Fetch Venues first (RLS handles the "which org" logic)
-    const { data: venuesData, error: vError } = await supabase
-      .from('venues')
-      .select('id, name');
-
-    if (cancelled || vError) return;
-    setVenues((venuesData ?? []) as VenueRow[]);
-
-    const venueIds = venuesData?.map((v) => v.id) || [];
-
-    if (venueIds.length > 0) {
-
-      const [aRes, dRes] = await Promise.all([
-        supabase
-          .from('areas')
-          .select('id, name, venue_id, current_occupancy')
-          .in('venue_id', venueIds),
-
-        supabase
-          .from('devices')
-          .select('id, area_id, name, flow_mode, current_count')
-      ]);
-
-      if (cancelled) return;
-
-      setAreas((aRes.data ?? []) as AreaRow[]);
-      setDevices((dRes.data ?? []) as DeviceRow[]);
-    } else {
-      setAreas([]);
-      setDevices([]);
+  const applyChange = useCallback(<T extends { id: string }>(list: T[], payload: unknown) => {
+    const { eventType, new: newRow, old } = payload as {
+      eventType: string
+      new?: T
+      old?: Partial<T>
     }
+    if (eventType === 'DELETE') {
+      const oldId = old?.id
+      if (!oldId) return list
+      return list.filter((row) => row.id !== oldId)
+    }
+    if (!newRow) return list
+    const idx = list.findIndex((row) => row.id === newRow.id)
+    if (idx === -1) return [newRow, ...list]
+    const next = [...list]
+    next[idx] = { ...next[idx], ...newRow }
+    return next
+  }, [])
 
-    setLoading(false);
-  };
+  const handleVenueChange = useCallback(
+    (payload: unknown) => {
+      setVenues((prev) => applyChange(prev, payload))
+    },
+    [applyChange]
+  )
 
-  fetchData();
+  const handleAreaChange = useCallback(
+    (payload: unknown) => {
+      setAreas((prev) => applyChange(prev, payload))
+    },
+    [applyChange]
+  )
 
-  return () => {
-    cancelled = true;
-  };
-}, []);
+  const handleDeviceChange = useCallback(
+    (payload: unknown) => {
+      setDevices((prev) => applyChange(prev, payload))
+    },
+    [applyChange]
+  )
+
+  const fetchData = useCallback(async () => {
+    if (!hasLoadedOnce.current) setLoading(true)
+    const supabase = createClient()
+    const { data: venuesData, error: vError } = await supabase.from('venues').select('id, name')
+    if (vError) return
+    setVenues((venuesData ?? []) as VenueRow[])
+    const venueIds = venuesData?.map((v) => v.id) || []
+    if (venueIds.length > 0) {
+      const [aRes, dRes] = await Promise.all([
+        supabase.from('areas').select('id, name, venue_id, current_occupancy').in('venue_id', venueIds),
+        supabase.from('devices').select('id, area_id, name, flow_mode, current_count'),
+      ])
+      setAreas((aRes.data ?? []) as AreaRow[])
+      setDevices((dRes.data ?? []) as DeviceRow[])
+    } else {
+      setAreas([])
+      setDevices([])
+    }
+    setLoading(false)
+    hasLoadedOnce.current = true
+  }, [])
+
+
+  useEffect(() => {
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) fetchData()
+    })
+    return () => { cancelled = true }
+  }, [fetchData])
+
+  useEffect(() => {
+    const venueIds = venues.map((v) => v.id)
+    const areaIds = areas.map((a) => a.id)
+    if (venueIds.length === 0) return
+
+    const supabase = createClient()
+    const channel = supabase.channel('clicr-realtime')
+
+    venueIds.forEach((venueId) => {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'venues', filter: `id=eq.${venueId}` },
+        handleVenueChange
+      )
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'areas', filter: `venue_id=eq.${venueId}` },
+        handleAreaChange
+      )
+    })
+
+    areaIds.forEach((areaId) => {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'devices', filter: `area_id=eq.${areaId}` },
+        handleDeviceChange
+      )
+    })
+
+    channel.subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchData, handleVenueChange, handleAreaChange, handleDeviceChange, venues, areas])
 
   const venuesWithContent = venues.map((venue) => {
     const venueAreas = areas.filter((a) => a.venue_id === venue.id)

@@ -42,7 +42,7 @@ export default function ClicrDetailPage() {
     setDevice(dev as DeviceRow)
     const { data: areaData, error: areaErr } = await supabase
       .from('areas')
-      .select('id, name, current_occupancy, count_male, count_female, capacity')
+      .select('id, name, count_male, count_female, capacity')
       .eq('id', (dev as DeviceRow).area_id)
       .single()
     if (areaErr || !areaData) {
@@ -166,7 +166,7 @@ export default function ClicrDetailPage() {
   const capacity = area.capacity ?? 0
 
   return (
-    <div className="min-h-screen bg-[#0b0b0f] text-white flex flex-col p-6">
+    <div className="min-h-screen bg-transparent text-white flex flex-col p-6">
       <div className="flex items-center gap-4">
         <Link
           href="/clicr"

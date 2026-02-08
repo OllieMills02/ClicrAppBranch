@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layers, Search, Filter, AlertCircle, CheckCircle2, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -42,31 +42,68 @@ export default function AreasPage() {
     const [newArea, setNewArea] = useState<NewAreaForm>(defaultNewArea);
     const [saving, setSaving] = useState(false);
 
+    const fetchData = useCallback(async () => {
+        const supabase = createClient();
+        const [areasRes, venuesRes] = await Promise.all([
+            supabase.from('areas').select('*'),
+            supabase.from('venues').select('id, name'),
+        ]);
+        const areaList = (areasRes.data ?? []) as Area[];
+        const venueList = (venuesRes.data ?? []) as VenueRow[];
+        setAreas(areaList);
+        setVenues(venueList);
+        if (areaList.length > 0) {
+            const { data: devicesData } = await supabase
+                .from('devices')
+                .select('area_id')
+                .in('area_id', areaList.map((a) => a.id));
+            const count: Record<string, number> = {};
+            areaList.forEach((a) => (count[a.id] = 0));
+            (devicesData ?? []).forEach((row: { area_id: string }) => { count[row.area_id] = (count[row.area_id] ?? 0) + 1; });
+            setDeviceCountByAreaId(count);
+        } else {
+            setDeviceCountByAreaId({});
+        }
+        setLoading(false);
+    }, []);
+
     useEffect(() => {
         let cancelled = false;
-        (async () => {
-            const supabase = createClient();
-            const [areasRes, venuesRes] = await Promise.all([
-                supabase.from('areas').select('*'),
-                supabase.from('venues').select('id, name'),
-            ]);
-            if (cancelled) return;
-            const areaList = (areasRes.data ?? []) as Area[];
-            const venueList = (venuesRes.data ?? []) as VenueRow[];
-            setAreas(areaList);
-            setVenues(venueList);
-            if (areaList.length > 0) {
-                const { data: devicesData } = await supabase.from('devices').select('area_id').in('area_id', areaList.map((a) => a.id));
-                if (cancelled) return;
-                const count: Record<string, number> = {};
-                areaList.forEach((a) => (count[a.id] = 0));
-                (devicesData ?? []).forEach((row: { area_id: string }) => { count[row.area_id] = (count[row.area_id] ?? 0) + 1; });
-                setDeviceCountByAreaId(count);
-            }
-            setLoading(false);
-        })();
+        queueMicrotask(() => {
+            if (!cancelled) fetchData();
+        });
         return () => { cancelled = true; };
-    }, []);
+    }, [fetchData]);
+
+    useEffect(() => {
+        const venueIds = venues.map((v) => v.id);
+        const areaIds = areas.map((a) => a.id);
+        if (venueIds.length === 0) return;
+
+        const supabase = createClient();
+        const channel = supabase.channel('areas-realtime');
+
+        venueIds.forEach((venueId) => {
+            channel.on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'areas', filter: `venue_id=eq.${venueId}` },
+                () => fetchData()
+            );
+        });
+
+        areaIds.forEach((areaId) => {
+            channel.on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'devices', filter: `area_id=eq.${areaId}` },
+                () => fetchData()
+            );
+        });
+
+        channel.subscribe();
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [fetchData, venues, areas]);
 
     const filteredAreas = areas.filter((a: Area) => {
         const matchesSearch = a.name?.toLowerCase().includes(search.toLowerCase()) ?? false;

@@ -27,24 +27,34 @@ function VenueCard({ venue, orgName: orgNameProp }: { venue: VenueRow; orgName?:
     const supabase = createClient()
     let cancelled = false
 
-    const fetchOccupancy = () => {
-      supabase
-        .from('venues')
-        .select('current_occupancy')
-        .eq('id', venue.id)
-        .single()
-        .then(({ data, error }) => {
-          if (cancelled) return
-          if (!error && data) setOccupancy({ current_occupancy: data.current_occupancy ?? 0 })
-          setLoading(false)
-        })
-    }
+    supabase
+      .from('venues')
+      .select('current_occupancy')
+      .eq('id', venue.id)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (!error && data) setOccupancy({ current_occupancy: data.current_occupancy ?? 0 })
+        setLoading(false)
+      })
 
-    fetchOccupancy()
-    const interval = setInterval(fetchOccupancy, 10_000)
+    const channel = supabase
+      .channel(`venue-occupancy:${venue.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'venues', filter: `id=eq.${venue.id}` },
+        (payload) => {
+          const next = payload.new as { current_occupancy?: number | null }
+          if (typeof next.current_occupancy === 'number') {
+            setOccupancy({ current_occupancy: next.current_occupancy })
+          }
+        }
+      )
+      .subscribe()
+
     return () => {
       cancelled = true
-      clearInterval(interval)
+      supabase.removeChannel(channel)
     }
   }, [venue.id])
 
