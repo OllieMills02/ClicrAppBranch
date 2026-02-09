@@ -126,7 +126,7 @@ export default function DashboardPage() {
         const { data: venueList, error: venueError } = await supabase
           .from('venues')
           .select('id, name, address, capacity, org_id, organizations(name)')
-          .order('name')
+          .order('current_occupancy', { ascending: false })
 
         if (venueError) throw venueError
         const rows = (venueList ?? []) as VenueRow[]

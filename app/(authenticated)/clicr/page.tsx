@@ -123,14 +123,20 @@ export default function ClicrListPage() {
     }
   }, [fetchData, handleVenueChange, handleAreaChange, handleDeviceChange, venues, areas])
 
-  const venuesWithContent = venues.map((venue) => {
-    const venueAreas = areas.filter((a) => a.venue_id === venue.id)
-    const areasWithDevices = venueAreas.map((area) => ({
-      ...area,
-      devices: devices.filter((d) => d.area_id === area.id),
-    }))
-    return { ...venue, areas: areasWithDevices }
-  })
+  const venuesWithContent = venues
+    .map((venue) => {
+      const venueAreas = areas.filter((a) => a.venue_id === venue.id)
+      const areasWithDevices = venueAreas.map((area) => ({
+        ...area,
+        devices: devices.filter((d) => d.area_id === area.id),
+      }))
+      return { ...venue, areas: areasWithDevices }
+    })
+    .sort((a, b) => {
+      const deviceCount = (v: { areas: { devices: unknown[] }[] }) =>
+        v.areas.reduce((sum, area) => sum + area.devices.length, 0)
+      return deviceCount(b) - deviceCount(a)
+    })
 
   if (loading) {
     return (

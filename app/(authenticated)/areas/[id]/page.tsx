@@ -444,29 +444,26 @@ function ClicrCard({ device, onArchive }: { device: DeviceRow; onArchive: () => 
         FlowIcon = LogOut;
         iconColor = 'text-rose-500';
     }
+
     return (
-        <div className="bg-black/40 border border-slate-800 rounded-xl p-4 flex items-center justify-between group hover:border-slate-600 transition-colors">
+        <Link href={`/clicr/${device.id}`} className="bg-black/40 border border-slate-800 rounded-xl p-4 flex items-center justify-between group hover:border-slate-600 transition-colors" >
             <div className="flex items-center gap-3">
                 <div className={cn('p-2 bg-slate-800 rounded-lg', iconColor)}>
                     <FlowIcon className="w-4 h-4" />
                 </div>
                 <div>
-                    <h4 className="text-white font-bold">{device.name}</h4>
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <h4 className="text-white font-bold group-hover:text-primary">{device.name}</h4>
+                    <div className="flex items-center gap-2 text-xs text-slate-500" >
                         <span className="font-mono bg-slate-900 px-1 py-0.5 rounded text-slate-300">{device.current_count ?? 0}</span>
                         <span>recorded today</span>
                     </div>
                 </div>
             </div>
             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Link href={`/clicr/${device.id}`} className="p-2 text-primary hover:bg-primary/10 rounded-lg" title="Open Counter">
-                    <ArrowRightLeft className="w-4 h-4" />
-                </Link>
-                <div className="h-4 w-[1px] bg-slate-700" />
                 <button type="button" onClick={onArchive} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-950/30 rounded-lg transition-colors" title="Archive">
                     <Trash2 className="w-4 h-4" />
                 </button>
             </div>
-        </div>
+        </Link>
     );
 }
