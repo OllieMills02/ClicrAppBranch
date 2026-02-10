@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, MonitorSmartphone, LogIn, LogOut, ChevronDown, ChevronRight } from 'lucide-react'
 import { useRole } from '@/components/RoleContext'
+import DeviceAddModal from '@/components/ui/modals/deviceAddModal'
 
 type AreaRow = { id: string; name: string; venue_id: string }
 type DeviceRow = { id: string; area_id: string; name: string; flow_mode: string; current_count: number; is_active: boolean }
@@ -16,10 +17,6 @@ export default function VenueDevicesTab({ venueId }: { venueId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [addModalOpen, setAddModalOpen] = useState(false)
-  const [newDeviceAreaId, setNewDeviceAreaId] = useState('')
-  const [newDeviceName, setNewDeviceName] = useState('')
-  const [newDeviceFlow, setNewDeviceFlow] = useState<string>('BIDIRECTIONAL')
-  const [saving, setSaving] = useState(false)
   const [loggingId, setLoggingId] = useState<string | null>(null)
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set())
 
@@ -94,30 +91,6 @@ export default function VenueDevicesTab({ venueId }: { venueId: string }) {
     return () => { cancelled = true }
   }, [venueId])
 
-  const handleAddDevice = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newDeviceAreaId || !newDeviceName.trim()) return
-    setSaving(true)
-    const supabase = createClient()
-    const { error: insertErr } = await supabase.from('devices').insert({
-      area_id: newDeviceAreaId,
-      name: newDeviceName.trim(),
-      flow_mode: newDeviceFlow || 'BIDIRECTIONAL',
-      current_count: 0,
-      is_active: true,
-    })
-    setSaving(false)
-    if (insertErr) {
-      setError(insertErr.message)
-      return
-    }
-    setAddModalOpen(false)
-    setNewDeviceAreaId('')
-    setNewDeviceName('')
-    setNewDeviceFlow('BIDIRECTIONAL')
-    await fetchData()
-  }
-
   const handleLog = async (deviceId: string, delta: number) => {
     const dev = devices.find((d) => d.id === deviceId)
     if (!dev) return
@@ -150,10 +123,7 @@ export default function VenueDevicesTab({ venueId }: { venueId: string }) {
         {!isStaff && (
           <button
             type="button"
-            onClick={() => {
-              setAddModalOpen(true)
-              if (areas.length > 0 && !newDeviceAreaId) setNewDeviceAreaId(areas[0].id)
-            }}
+            onClick={() => setAddModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -246,76 +216,13 @@ export default function VenueDevicesTab({ venueId }: { venueId: string }) {
         )
       })()}
 
-      {!isStaff && addModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-          onClick={() => !saving && setAddModalOpen(false)}
-        >
-          <div
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold text-white mb-4">Add Device (Clicker)</h3>
-            <form onSubmit={handleAddDevice} className="space-y-4">
-              <div>
-                <label htmlFor="dev-area" className="block text-sm font-medium text-slate-400 mb-1">Area</label>
-                <select
-                  id="dev-area"
-                  required
-                  value={newDeviceAreaId}
-                  onChange={(e) => setNewDeviceAreaId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="">Select area</option>
-                  {areas.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="dev-name" className="block text-sm font-medium text-slate-400 mb-1">Name</label>
-                <input
-                  id="dev-name"
-                  type="text"
-                  required
-                  value={newDeviceName}
-                  onChange={(e) => setNewDeviceName(e.target.value)}
-                  placeholder="e.g. Door 1"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-              <div>
-                <label htmlFor="dev-flow" className="block text-sm font-medium text-slate-400 mb-1">Flow mode</label>
-                <select
-                  id="dev-flow"
-                  value={newDeviceFlow}
-                  onChange={(e) => setNewDeviceFlow(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="BIDIRECTIONAL">Bidirectional (in + out)</option>
-                  <option value="IN_ONLY">In only</option>
-                  <option value="OUT_ONLY">Out only</option>
-                </select>
-              </div>
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => !saving && setAddModalOpen(false)}
-                  className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-6 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg font-bold disabled:opacity-50"
-                >
-                  {saving ? 'Adding…' : 'Add Device'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {!isStaff && (
+        <DeviceAddModal
+          open={addModalOpen}
+          onClose={() => setAddModalOpen(false)}
+          onSuccess={fetchData}
+          areas={areas}
+        />
       )}
     </div>
   )

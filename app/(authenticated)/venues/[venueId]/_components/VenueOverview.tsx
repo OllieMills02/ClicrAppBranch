@@ -236,27 +236,6 @@ export default function VenueOverviewTab({
           </div>
         </div>
       </div>
-
-      <div className="flex items-center gap-3 text-sm text-slate-500">
-        {cap > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${Math.min(pct, 100)}%` }} />
-            </div>
-            <span>{Math.round(pct)}%</span>
-          </div>
-        )}
-        {venue.address && (
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 shrink-0" />
-            {venue.address}
-          </div>
-        )}
-        <button type="button" onClick={onRefresh} className="text-primary hover:underline flex items-center gap-2">
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
-      </div>
     </div>
   );
 }

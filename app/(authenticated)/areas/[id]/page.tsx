@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useRole } from '@/components/RoleContext';
+import DeviceAddModal from '@/components/ui/modals/deviceAddModal';
 
 type AreaRow = {
     id: string;
@@ -50,10 +51,6 @@ export default function AreaDetailPage() {
     const [clicrToDelete, setClicrToDelete] = useState<DeviceRow | null>(null);
     const [editName, setEditName] = useState('');
     const [editCap, setEditCap] = useState(0);
-    const [newClicrName, setNewClicrName] = useState('');
-    const [newClicrCommand, setNewClicrCommand] = useState('');
-    const [newClicrFlow, setNewClicrFlow] = useState<'IN_ONLY' | 'OUT_ONLY' | 'BIDIRECTIONAL'>('BIDIRECTIONAL');
-    const [savingClicr, setSavingClicr] = useState(false);
     const [savingArea, setSavingArea] = useState(false);
 
     const fetchData = useCallback(async () => {
@@ -166,31 +163,6 @@ export default function AreaDetailPage() {
         setSavingArea(false);
         setIsEditingArea(false);
         await fetchData();
-    };
-
-    const handleAddClicr = async () => {
-        if (!area) return;
-        if (newClicrName.trim()) {
-            setSavingClicr(true);
-            const supabase = createClient();
-            const { error: insertErr } = await supabase.from('devices').insert({
-                area_id: area.id,
-                name: newClicrName.trim(),
-                flow_mode: newClicrFlow,
-                current_count: 0,
-                is_active: true,
-            });
-            setSavingClicr(false);
-            if (insertErr) {
-                alert(`Failed to add Clicr: ${insertErr.message}`);
-                return;
-            }
-            setShowAddClicr(false);
-            setNewClicrName('');
-            setNewClicrCommand('');
-            setNewClicrFlow('BIDIRECTIONAL');
-            await fetchData();
-        }
     };
 
     const confirmDeleteClicr = async () => {
@@ -310,86 +282,13 @@ export default function AreaDetailPage() {
                 </div>
             </div>
 
-            <AnimatePresence>
-                {showAddClicr && (
-                    <div
-                        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-                        onClick={() => !savingClicr && setShowAddClicr(false)}
-                        onKeyDown={(e) => { if (e.key === 'Escape' && !savingClicr) setShowAddClicr(false); }}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            role="dialog"
-                            aria-modal="true"
-                            aria-labelledby="add-clicr-title"
-                            className="bg-slate-900 border border-slate-700 p-6 rounded-2xl w-full max-w-md"
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => { if (e.key === 'Escape' && !savingClicr) setShowAddClicr(false); }}
-                        >
-                            <h2 id="add-clicr-title" className="text-xl font-bold text-white mb-4">Add New Clicr</h2>
-                            <div className="space-y-4">
-                                <div>
-                                    <label htmlFor="clicr-name" className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Name</label>
-                                    <input
-                                        id="clicr-name"
-                                        type="text"
-                                        value={newClicrName}
-                                        onChange={e => setNewClicrName(e.target.value)}
-                                        placeholder="e.g. Front Door, VIP Entrance"
-                                        className="w-full bg-black border border-slate-700 rounded-lg p-3 text-white focus:border-primary outline-none"
-                                        autoFocus
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="clicr-command" className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Command / Mapping (Optional)</label>
-                                    <input
-                                        id="clicr-command"
-                                        type="text"
-                                        value={newClicrCommand}
-                                        onChange={e => setNewClicrCommand(e.target.value)}
-                                        placeholder="e.g. DOOR_1_IN or Hardware Code"
-                                        className="w-full bg-black border border-slate-700 rounded-lg p-3 text-white focus:border-primary outline-none font-mono text-sm"
-                                    />
-                                    <p className="text-[10px] text-slate-500 mt-1">Unique identifier for hardware or keyboard mapping.</p>
-                                </div>
-                                <div>
-                                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Flow Mode</span>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {(['IN_ONLY', 'OUT_ONLY', 'BIDIRECTIONAL'] as const).map(mode => (
-                                            <button
-                                                key={mode}
-                                                type="button"
-                                                onClick={() => setNewClicrFlow(mode)}
-                                                className={cn(
-                                                    "p-2 rounded-lg text-xs font-bold border transition-colors",
-                                                    newClicrFlow === mode
-                                                        ? "bg-primary/20 border-primary text-primary"
-                                                        : "bg-slate-800 border-transparent text-slate-400 hover:bg-slate-700"
-                                                )}
-                                            >
-                                                {mode.replaceAll('_', ' ')}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex gap-3 mt-8">
-                                <button type="button" onClick={() => setShowAddClicr(false)} className="flex-1 p-3 rounded-lg bg-slate-800 text-slate-300 font-bold hover:bg-slate-700">Cancel</button>
-                                <button
-                                    type="button"
-                                    onClick={handleAddClicr}
-                                    disabled={savingClicr || !newClicrName.trim()}
-                                    className="flex-1 p-3 rounded-lg bg-primary text-white font-bold hover:bg-primary-hover shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {savingClicr ? 'Saving...' : 'Create Clicr'}
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+            <DeviceAddModal
+                open={showAddClicr}
+                onClose={() => setShowAddClicr(false)}
+                onSuccess={fetchData}
+                areaId={area?.id}
+                title="Add Clicr"
+            />
 
             <AnimatePresence>
                 {clicrToDelete && (
